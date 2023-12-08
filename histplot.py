@@ -324,15 +324,18 @@ def construct_mixture_2Dplot(data_multicol):
     # индексы измерений (всего их сколько и окон)
     X = data_multicol.attrs.get('custom_xaxis')
     
-    lows = data_multicol.columns.levels[1] # число законов в смеси
+    lows = list(data_multicol.columns.levels[1]) # число законов в смеси
+    lows.remove('')
     lows_colors = ["#84C318", "#C45AB3", "#EDD892",
                    "#C44536", "#4BB3FD", "#FC944A",
                    "#4AFC94", "#00A9A5"]
-    params = data_multicol.columns.levels[0] # число параметров в кадом законе
+    params = list(data_multicol.columns.levels[0]) # число параметров для каждого закона
+    params.remove('LL_hist')
     params_names = custom_param_names(params)
     params_names.append('Энтропия')
+    params_names.append('Маргинальная log функция правдоподобия')
     
-    num_rows =len(params)+1 # +1 для энтропии
+    num_rows =len(params)+1 + 1 # +1 для энтропии +1 для ф-ии лог-маргинального правдоподобия
     fig = make_subplots(rows=num_rows, cols=1,
                         subplot_titles=params_names,
                         row_titles=None,
@@ -345,9 +348,11 @@ def construct_mixture_2Dplot(data_multicol):
             fig.add_trace(Scatter(x=X, 
                                   y=Y,
                                   name=f"Закон №{i+1}",
+                                  legendgroup=f"Закон №{i+1}",
                                   showlegend=legend,
                                   mode='lines', line=dict(
-                                      color=lows_colors[i])),
+                                      color=lows_colors[i]),
+                          hoverlabel=dict(font_color='blue')),
                           row = row_ind + 1,
                           col = 1,
                           )
@@ -360,6 +365,18 @@ def construct_mixture_2Dplot(data_multicol):
                           showlegend=legend,
                           mode='lines', line=dict(
                               color=lows_colors[-1])),
+                  row = num_rows - 1,
+                  col = 1,
+                  )
+    
+    # График функции правдоподобия
+    Y = data_multicol.loc[:, 'LL_hist'].values
+    fig.add_trace(Scatter(x=X, 
+                          y=Y,
+                          name=f"Фун-ия правдоподобия",
+                          showlegend=legend,
+                          mode='lines', line=dict(
+                              color=lows_colors[-2])),
                   row = num_rows,
                   col = 1,
                   )
@@ -367,10 +384,10 @@ def construct_mixture_2Dplot(data_multicol):
     # Название графика
     if data_multicol.attrs.get('num_of_iter') is not None:
         em_cond_description = f"Итераций {data_multicol.attrs.get('num_of_iter')}. "
-    elif data_multicol.attrs.get('eps') is not None:
-        em_cond_description = f"Точность весов: {data_multicol.attrs.get('eps')}. "
+    elif data_multicol.attrs.get('conv_prime') is not None:
+        em_cond_description = f"Точность весов: {data_multicol.attrs.get('conv_prime')}. "
         
-    custom_title = str(f"Смесь из {len(params)} законов, "+
+    custom_title = str(f"Смесь из {len(lows)} законов, "+
             f"{data_multicol.attrs.get('data_length')} отсчётов "+
             f"{data_multicol.attrs.get('data_name')}. "+
             f"Окно: {data_multicol.attrs.get('window_size')}. "+
