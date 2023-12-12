@@ -18,7 +18,6 @@ TIME_RELATED_XTICK= [
 ]
 
 
-
 # Строит 2D гистограмму. НЕ АКТУАЛЬНЫЙ
 def static2D_hist(data, window_size=1000, bins=20, step=0, figure=None):
     '''
@@ -91,13 +90,13 @@ def static3D_hist(data, window_size=1000, bins=20, step=1):
                     кол-во интервалов {bins}.")
     plt.show()
 
-#--------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 
 # Строит объемный 3D график
 def movable3D_hist(hist3D):
     '''
     Строит объемный график, представляющий динамику изменения гистограмм в 
-    зависимости от положения окна. Сечение, перпендикулярное оси у "№ Окна" - 
+    зависимости от положения окна. Сечение, перпендикулярное оси y "№ Окна" - 
     это гистограмма в соответсвующем окне.
     '''
     import plotly.graph_objects as go
@@ -155,8 +154,8 @@ def movable3D_hist(hist3D):
     # Turn off reloader if inside Jupyter
     app.run_server(debug=True, use_reloader=False)
     '''
-#--------------------------------------------------------------------------------
-    
+
+#-------------------------------------------------------------------------------
 def show_genral_info(series, bins=200, add_title='', add_xaxis=None):
     '''
     Иллюстрирует ключевые характеристики данных: вид данных и гистограмму для 
@@ -196,9 +195,30 @@ def show_genral_info(series, bins=200, add_title='', add_xaxis=None):
 
     fig.show()
 
-#--------------------------------------------------------------------------------
-
+#-------------------------------------------------------------------------------
 # 2D Графики для вывода гистограммы и её приближения смесью
+
+def mixture(mix_param):
+    '''
+    Используется в двух последующих функциях. В целом этот раздел не особо 
+    важен. Функция считает значения смеси по словарю (веса, мат.ож, ср.кв.откл.)
+    '''
+    import tensorflow as tf
+    import tensorflow_probability as tfp
+
+    pi_cluster = tf.constant(mix_param.get("class_probs"))
+    mus = tf.constant(mix_param.get("mus"))
+    sigmas = tf.constant(mix_param.get("sigmas"))
+
+    cluster_distribution = tfp.distributions.Categorical(probs=pi_cluster,
+                                                        name="cluster")
+    factor_distribution = tfp.distributions.Normal(loc=mus ,scale=sigmas,
+                                                name="factors")
+    normal_mixture = tfp.distributions.MixtureSameFamily(
+        mixture_distribution = cluster_distribution,
+        components_distribution = factor_distribution)
+    return normal_mixture
+
 def construct_hist_plot(data_hist, data_plot, bins, part_i=None):
     '''
     Используется как вложенная функция в static2D_mixture 
@@ -207,8 +227,6 @@ def construct_hist_plot(data_hist, data_plot, bins, part_i=None):
     from numpy import linspace
     from plotly.graph_objects import Scatter # Для потсроения кривых
     from plotly.express import histogram # Для построения гистограммы
-    
-    from essentials import mixture
     
     x = linspace(min(data_hist), max(data_hist), bins)
 
@@ -233,8 +251,6 @@ def construct_hist_subplots(data_hist, data_plot, bins):
     from plotly.subplots import make_subplots
     from plotly.graph_objects import Histogram, Scatter
     
-    from essentials import mixture
-    
     x = linspace(min(data_hist), max(data_hist), bins)
     
     plots_names = ["Нормальное распределение (смесь из 1 закона)"]
@@ -256,14 +272,13 @@ def construct_hist_subplots(data_hist, data_plot, bins):
                               name=f"Смесь {i+1} законов"),
                       row = i+1, col = 1)
 
-
     return fig
 
 def static2D_mixture(mix_dicts, series, bins=200, mode='one plot'):
     '''
-    Основная функция для визуализации получившихся смесей
+    Функция для визуализации получившихся смесей совместно с гистограммой данных
     '''
-    
+
     if mode=='one plot':
         fig = construct_hist_plot(series, mix_dicts, bins=bins)
     
@@ -298,12 +313,10 @@ def static2D_mixture(mix_dicts, series, bins=200, mode='one plot'):
         linecolor='black', gridcolor='lightgrey')
     fig.show()
     
-#--------------------------------------------------------------------------------
-
-# График для вывода весов, мат.ож-ий и ср.кв.откл-ий для смесей распределений
+#-------------------------------------------------------------------------------
 def construct_mixture_2Dplot(data_multicol):
     '''
-    
+    График для вывода весов, мат.ож-ий и ср.кв.откл-ий для смесей распределений
     '''
     from plotly.graph_objects import Scatter # Для потсроения кривых   
     #from essentials import mixture

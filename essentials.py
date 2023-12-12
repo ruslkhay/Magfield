@@ -1,4 +1,3 @@
-
 def construct_hist3D(data, window_size=1000, bins=20, step=1):
     """
     Функция составляет 3D гистограммы.
@@ -42,12 +41,100 @@ def construct_hist3D(data, window_size=1000, bins=20, step=1):
         dz = hist.flatten()
         df.loc[len(df.index)-1] = [xpos, ypos, dz]
     return df
+#-------------------------------------------------------------------------------
 
-#--------------------------------------------------------------------------------
+def mixture_predictions(mix_param_indexed, xaxis):
+    # Используется при визуализации смесей в histplot.py
+    import tensorflow as tf
+    import tensorflow_probability as tfp
+    from numpy import array
 
+    class_probs = tf.constant(mix_param_indexed['cl_prob'])
+    mus = tf.constant(mix_param_indexed['math_exp'])
+    sigmas = tf.constant(mix_param_indexed['st_dev'])
+
+    cluster_distribution = tfp.distributions.Categorical(probs=class_probs,
+                                                        name="cluster")
+    factor_distribution = tfp.distributions.Normal(loc=mus ,scale=sigmas,
+                                                name="factors")
+    
+    normal_mixture = tfp.distributions.MixtureSameFamily(
+        mixture_distribution = cluster_distribution,
+        components_distribution = factor_distribution)
+    
+    return array(list(map(normal_mixture.prob, xaxis)))
+
+def construct_mixture3D(mixture, series, window_size=1000, bins=20, step=1):
+    """
+    Функция формирует данные о смеси для 3D визуализации.
+
+    Параметры
+    ----------
+    mixture : pandas.core.frame.DataFrame
+        Таблица со значениями парамаетров компонент смеси. Каждая строка
+        содержит параметры, полученные ЕМ-алгоритмом на конкретном окне
+    window_size : int
+        Длина поднабора (окна) data, который будет использоваться при анализе.
+    step : int
+        Величина смещения окна, относительно предыдущего.
+
+    Возвращает:
+    ----------
+    df: pandas.core.frame.DataFrame
+        Таблица с координатами точек привязок: bins, wind_numb, -
+        и высотами столбцов - hist_freq.
+        df.attrs: dict
+            Содержит вспомогательную информацию, используемую при кастомизации.
+    """
+    from pandas import DataFrame
+    from numpy import meshgrid
+    import numpy as np
+    from tqdm.notebook import tqdm
+
+    num_windows = len(series) - window_size
+    
+    df = DataFrame({'bins':[], 'step':[], 'density':[]})
+    df.attrs = {"series_name": series.name,
+                "data_length": len(mixture),
+                "window_size": window_size,
+                "step_size": step,
+                "comp_num": (mixture.shape[1]-1)//3}
+    
+    for i in tqdm(range(0, num_windows, step)):
+        window = series[i:i+window_size]
+        _bins = np.histogram_bin_edges(window, bins=bins)
+        
+        dens = mixture_predictions(mixture.loc[[i//step]], _bins[:-1])
+        xpos, ypos = meshgrid(_bins[:-1], i)
+        xpos = xpos.flatten()
+        ypos = ypos.flatten()
+        dz = dens.flatten()
+        df.loc[len(df.index)] = [xpos, ypos, dz]
+    return df
 import silence_tensorflow.auto
+#-------------------------------------------------------------------------------
 
-#--------------------------------------------------------------------------------
+def log_likelihood(class_probs, mus, sigmas, data): 
+    # Calculate the marginal log likelihood
+    import numpy as np
+    from scipy.special import logsumexp
+    import tensorflow_probability as tfp
+
+    result = np.sum(
+        logsumexp(
+            np.log(class_probs)
+            +
+            tfp.distributions.Normal(loc=mus, scale=sigmas).log_prob(
+                data.reshape(-1, 1)
+            ).numpy()
+            ,
+            axis=1
+        )
+        ,
+        axis=0
+    )
+    return result
+
 def EM_iterative(
     dataset,
     n_iterations,
@@ -56,7 +143,6 @@ def EM_iterative(
     sigmas_initial,
 ):
     import numpy as np
-    from scipy.special import logsumexp
     from tqdm import tqdm
     import tensorflow_probability as tfp
 
@@ -67,9 +153,7 @@ def EM_iterative(
     mus = mus_initial.copy()
     sigmas = sigmas_initial.copy()
 
-    log_likelihood_history = []
-
-    for em_iter in tqdm(range(n_iterations)):
+    for _ in tqdm(range(n_iterations)):
         # E-Step
         responsibilities = tfp.distributions.Normal(loc=mus, scale=sigmas).prob(
             dataset.reshape(-1, 1)
@@ -82,115 +166,17 @@ def EM_iterative(
 
         # M-Step
         class_probs = class_responsibilities / n_samples
-        mus = np.sum(responsibilities * dataset.reshape(-1, 1), axis=0) / class_responsibilities
+        mus = np.sum(responsibilities * dataset.reshape(-1, 1),
+                      axis=0) / class_responsibilities
         sigmas = np.sqrt(
             np.sum(responsibilities * (dataset.reshape(-1, 1) - mus.reshape(1, -1))**2, axis=0)
             / class_responsibilities
         )
+    # Возвращаю значение ф-ии правд-ия для лучего результата
+    log_lh = log_likelihood(class_probs, mus, sigmas, dataset)
+    return class_probs, mus, sigmas, log_lh
 
-        # Calculate the marginal log likelihood
-        log_likelihood = np.sum(
-            logsumexp(
-                np.log(class_probs)
-                +
-                tfp.distributions.Normal(loc=mus, scale=sigmas).log_prob(
-                    dataset.reshape(-1, 1)
-                ).numpy()
-                ,
-                axis=1
-            )
-            ,
-            axis=0
-        )
-        
-        log_likelihood_history.append(log_likelihood)
-    print(class_probs)
-    return class_probs, mus, sigmas, log_likelihood_history
-
-def EM_adaptive(
-    dataset,
-    convergence_accurcy,
-    class_probs_initial,
-    mus_initial,
-    sigmas_initial,
-):
-    import numpy as np
-    from scipy.special import logsumexp
-    from tqdm import tqdm
-    import tensorflow_probability as tfp
-    
-    n_classes = class_probs_initial.shape[0]
-    n_samples = dataset.shape[0]
-
-    class_probs = class_probs_initial.copy()
-    mus = mus_initial.copy()
-    sigmas = sigmas_initial.copy()
-    log_likelihood_history = []
-    # prev_class_responsibilities = np.full((n_samples, n_classes), n_samples)
-    prev_class_responsibilities = np.zeros((n_samples, n_classes))
-    converged = False
-    i=0
-    while not converged:
-        
-        # E-шаг
-        responsibilities = tfp.distributions.Normal(loc=mus, scale=sigmas).prob(
-            dataset.reshape(-1, 1)
-        ).numpy() * class_probs
-        
-        responsibilities /= np.linalg.norm(responsibilities, axis=1, ord=1, keepdims=True)
-
-        class_responsibilities = np.sum(responsibilities, axis=0)
-        
-        # Проверка условия игнорирования хотя бы одного копмонента смеси
-        if np.any(np.isnan(class_responsibilities)):
-            # Запускаем ЕМ завново, но с новыми значениями
-            mus = np.random.rand(n_classes)
-            sigmas = np.random.rand(n_classes)
-            class_probs = np.random.dirichlet(np.ones(n_classes))
-            continue
-            
-        # M-шаг
-        class_probs = class_responsibilities / n_samples
-        mus = np.sum(responsibilities * dataset.reshape(-1, 1), axis=0) / class_responsibilities
-        sigmas = np.sqrt(
-            np.sum(responsibilities * (dataset.reshape(-1, 1) - mus.reshape(1, -1))**2, axis=0)
-            / class_responsibilities
-        )
-        
-        # Упорядычиваем значения, чтобы "пронумировать" компоненты смеси
-        class_probs.sort()
-        mus.sort()
-        sigmas.sort()
-        
-        # Вычисление маргинальной функции правдоподобия по сгенерированным параметрам
-        log_likelihood = np.sum(
-            logsumexp(
-                np.log(class_probs)
-                +
-                tfp.distributions.Normal(loc=mus, scale=sigmas).log_prob(
-                    dataset.reshape(-1, 1)
-                ).numpy()
-                ,
-                axis=1
-            )
-            ,
-            axis=0
-        )
-        log_likelihood_history.append(log_likelihood)
-        
-
-        cond_eps = np.all(np.abs((class_responsibilities - prev_class_responsibilities) / n_samples <= convergence_accurcy))
-        if cond_eps:
-            print(i, '\t',class_responsibilities/n_samples,'\n\t',prev_class_responsibilities/ n_samples,'\n\n')
-            converged = True
-            break           
-        i+=1
-        prev_class_responsibilities = class_responsibilities.copy()
-    
-    return class_probs, mus, sigmas, log_likelihood_history
-
-
-def em_adap(
+def EM_adap(
     dataset,
     convergence_accuracy,
     class_probs_initial,
@@ -198,7 +184,6 @@ def em_adap(
     sigmas_initial,
 ):
     import numpy as np
-    from scipy.special import logsumexp
     import tensorflow_probability as tfp
     
     n_classes = class_probs_initial.shape[0]
@@ -208,8 +193,6 @@ def em_adap(
     class_probs = class_probs_initial.copy()
     mus = mus_initial.copy()
     sigmas = sigmas_initial.copy()
-
-    log_likelihood_history = []
 
     prev_class_probs = np.zeros(n_classes) # intial valurs for condition
     converged = False
@@ -243,41 +226,43 @@ def em_adap(
             / class_responsibilities
         )
 
+        # if(np.any(np.abs(class_probs-class_probs_initial) > 0.3 ) or
+        #    np.any(np.abs(mus-mus_initial) > 0.3 ) or
+        #    np.any(np.abs(sigmas-sigmas_initial) > 0.3 )):
+        #     class_probs = np.random.dirichlet(np.ones(n_classes))
+        #     mus = np.random.rand(n_classes)
+        #     sigmas = np.random.rand(n_classes)
+        #     continue
+
         if(np.all(class_probs - prev_class_probs <= epsilon)):
             break
 
         prev_class_probs = class_probs.copy()
 
-        # Calculate the marginal log likelihood
-        log_likelihood = np.sum(
-            logsumexp(
-                np.log(class_probs)
-                +
-                tfp.distributions.Normal(loc=mus, scale=sigmas).log_prob(
-                    dataset.reshape(-1, 1)
-                ).numpy()
-                ,
-                axis=1
-            )
-            ,
-            axis=0
-        )
-        
-        log_likelihood_history.append(log_likelihood)
-    return class_probs, mus, sigmas, log_likelihood_history
+    # Возвращаю значение ф-ии правд-ия для лучего результата
+    log_lh = log_likelihood(class_probs, mus, sigmas, dataset)
+
+    if(np.any(np.abs(class_probs-class_probs_initial) > 0.2 )):
+        #Сортируем в правильном порядке
+        sorted_indices = sorted(range(len(class_probs_initial)),
+                                key=lambda k: class_probs_initial[k])
+        class_probs = np.array([class_probs[i] for i in sorted_indices])
+        mus = np.array([mus[i] for i in sorted_indices])
+        sigmas = np.array([sigmas[i] for i in sorted_indices])
+
+    return class_probs, mus, sigmas, log_lh
 
 def EM_sieved(
     dataset,
-    n_classes,
-    convergence_accuracy_initial,
-    n_candidates, # кол-во наборов смесей
-    convergence_accuracy_prime,
-    n_chosen_ones, # кол-во (лучших) наборов, которые мы хотим получить в результате
-    random_seed,
+    n_classes: int,
+    n_iter_initial: int,
+    convergence_accuracy_prime: float,
+    n_candidates=100, # кол-во наборов смесей
+    n_chosen_ones=1, # кол-во (лучших) наборов, которые мы хотим получить в результате
+    random_seed=42,
     prog_bar=False,
     prev_params=None
 ):
-
     import numpy as np
     from tqdm.notebook import tqdm
     
@@ -304,9 +289,9 @@ def EM_sieved(
         class_probs = np.random.dirichlet(np.ones(n_classes))
         
         # Рассчитываем параметры ЕМ-алгоритмом
-        class_probs, mus, sigmas, log_likelihood_history = em_adap(
+        class_probs, mus, sigmas, ll = EM_iterative(
             dataset,
-            convergence_accuracy_initial,
+            n_iter_initial,
             class_probs,
             mus,
             sigmas,
@@ -316,7 +301,7 @@ def EM_sieved(
         Mus.append(mus)
         Sigmas.append(sigmas)
         Class_probs.append(class_probs)
-        LL_histories.append(log_likelihood_history)
+        LL_histories.append(ll)
 
     # Добавляем предыдущие парам-ы, если нужно
     if prev_params is not None:
@@ -326,17 +311,10 @@ def EM_sieved(
         LL_histories.append(prev_params[3])
 
     # (2) Отбор результатов.
-    from itertools import zip_longest
+    log_likelihood_history_array = np.array(LL_histories)
     
-    # Подгоняю списики с историей функций правдоподобия под один размер.
-    LL_hist_same_size = [list(tpl) for tpl in 
-                            zip(*zip_longest(*LL_histories,
-                                              fillvalue=np.NaN))]
-    log_likelihood_history_array = np.array(LL_hist_same_size)
-    
-
     # Выбор лучших параметров наборов и отсеивание лишних результатов
-    ordered_candidate_ids = np.argsort( - log_likelihood_history_array[:, -1])
+    ordered_candidate_ids = np.argsort( - log_likelihood_history_array)
     chosen_ones_ids = ordered_candidate_ids[:n_chosen_ones]
 
     # (3) Запуск ЕМ-алгоритма для лучших параметров смесей
@@ -346,7 +324,7 @@ def EM_sieved(
     LL_histories_chosen = []
 
     for chosen_one_id in pbar(chosen_ones_ids+[-1], "ЕМ для лучших парам-ов"):
-        class_probs, mus, sigmas, log_likelihood_history = em_adap(
+        class_probs, mus, sigmas, log_likelihood_history = EM_adap(
             dataset,
             convergence_accuracy_prime,
             Class_probs[chosen_one_id],
@@ -362,13 +340,11 @@ def EM_sieved(
     # (4) Выбор лучшего кандидата
     
     # Подгоняю под один размер. Сохраняю историю лучших. Нахожу номер наилучшего
-    LL_histories_chosen_same_size = [list(tpl) for tpl in 
-                                        zip(*zip_longest(*LL_histories_chosen,
-                                                        fillvalue=np.NaN))]
-    log_likelihood_history_chosen_ones_array = np.array(LL_histories_chosen_same_size)
+
+    log_likelihood_history_chosen_ones_array = np.array(LL_histories_chosen)
     # log_likelihood_history_chosen_ones_array = np.array(log_likelihood_history_chosen_ones_list)
 
-    ordered_chosen_ones_ids = np.argsort( - log_likelihood_history_chosen_ones_array[:, -1])
+    ordered_chosen_ones_ids = np.argsort( - log_likelihood_history_chosen_ones_array)
     
     # Выделяю лучщие параметры
     best_chosen_one_id = ordered_chosen_ones_ids[0]
@@ -377,100 +353,21 @@ def EM_sieved(
     best_class_probs = Class_probs_chosen[best_chosen_one_id]
 
     # Сортировка первого списка и получение индексов перестановки
-    sorted_indices = sorted(range(len(best_sigmas)),
-                             key=lambda k: best_sigmas[k])
-    best_class_probs = np.array([best_class_probs[i] for i in sorted_indices])
-    best_mus = np.array([best_mus[i] for i in sorted_indices])
-    best_sigmas = np.array([best_sigmas[i] for i in sorted_indices])
+    # sorted_indices = sorted(range(len(best_class_probs)),
+    #                          key=lambda k: best_class_probs[k])
+    # best_class_probs = np.array([best_class_probs[i] for i in sorted_indices])
+    # best_mus = np.array([best_mus[i] for i in sorted_indices])
+    # best_sigmas = np.array([best_sigmas[i] for i in sorted_indices])
 
 
     return best_class_probs, best_mus, best_sigmas, log_likelihood_history_chosen_ones_array
-
-
-def em_sieved(
-    dataset,
-    n_classes,
-    n_iterations_pre_sieving,
-    n_candidates,
-    n_iterations_post_sieving,
-    n_chosen_ones,
-    random_seed,
-):
-    import numpy as np
-    from scipy.special import logsumexp
-    from tqdm import tqdm
-    import tensorflow_probability as tfp
-    # (1) Pre-Sieving
-
-    mus_list = []
-    sigmas_list = []
-    class_probs_list = []
-    log_likelihood_history_list = []
-
-    for candidate_id in range(n_candidates):
-        np.random.seed(random_seed + candidate_id)
-
-        mus = np.random.rand(n_classes)
-        sigmas = np.random.rand(n_classes)
-        class_probs = np.random.dirichlet(np.ones(n_classes))
-
-        class_probs, mus, sigmas, log_likelihood_history = EM_iterative(
-            dataset,
-            n_iterations_pre_sieving,
-            class_probs,
-            mus,
-            sigmas,
-        )
-        mus_list.append(mus)
-        sigmas_list.append(sigmas)
-        class_probs_list.append(class_probs)
-        log_likelihood_history_list.append(log_likelihood_history)
-    
-    # (2) Sieving, select the best candidates
-    log_likelihood_history_array = np.array(log_likelihood_history_list)
-
-    # Sort in descending order
-    ordered_candidate_ids = np.argsort( - log_likelihood_history_array[:, -1])
-    chosen_ones_ids = ordered_candidate_ids[:n_chosen_ones]
-
-    # (3) Post-Sieving
-    mus_chosen_ones_list = []
-    sigmas_chosen_ones_list = []
-    class_probs_chosen_ones_list = []
-    log_likelihood_history_chosen_ones_list = []
-    for chosen_one_id in chosen_ones_ids:
-        class_probs, mus, sigmas, log_likelihood_history = EM_iterative(
-            dataset,
-            n_iterations_post_sieving,
-            class_probs_list[chosen_one_id],
-            mus_list[chosen_one_id],
-            sigmas_list[chosen_one_id],
-        )
-
-        mus_chosen_ones_list.append(mus)
-        sigmas_chosen_ones_list.append(sigmas)
-        class_probs_chosen_ones_list.append(class_probs)
-        log_likelihood_history_chosen_ones_list.append(log_likelihood_history)
-    
-    # (4) Select the very best candidate
-    log_likelihood_history_chosen_ones_array = np.array(log_likelihood_history_chosen_ones_list)
-
-    # Sort in descending order
-    ordered_chosen_ones_ids = np.argsort( - log_likelihood_history_chosen_ones_array[:, -1])
-
-    best_chosen_one_id = ordered_chosen_ones_ids[0]
-    best_mus = mus_chosen_ones_list[best_chosen_one_id]
-    best_sigmas = sigmas_chosen_ones_list[best_chosen_one_id]
-    best_class_probs = class_probs_chosen_ones_list[best_chosen_one_id]
-
-    return best_class_probs, best_mus, best_sigmas, log_likelihood_history_chosen_ones_array
-#--------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 
 def mixture_extraction(series, 
                        window_size=1000, 
                        step=10, 
                        n_iter=None, 
-                       conv_initial=0.001, 
+                       n_iter_initial=100, 
                        conv_prime=0.0001,
                        n_class=6,
                        n_candidates = 11,
@@ -486,7 +383,7 @@ def mixture_extraction(series,
     
     # Параметры для ЕМ-алгоритма
     n_classes  = n_class
-    convergence_accuracy_initial = conv_initial
+    n_iter_initial = n_iter_initial
     n_candidates = n_candidates
     convergence_accuracy_prime = conv_prime
     n_chosen_ones = n_choose # кол-во (лучших) наборов, которые мы хотим получить в результате
@@ -507,21 +404,34 @@ def mixture_extraction(series,
             "num_of_lows": n_class,
             "custom_xaxis": []}
 
+
+
+    # Initial
+    intial_param = EM_sieved(series[:window_size].values,
+                                n_classes,
+                                n_iter_initial,
+                                convergence_accuracy_prime,
+                                n_candidates,
+                                n_chosen_ones,       
+                                random_seed,
+                                prog_bar=EM_prog_bar)
+    
+    class_probs = intial_param[0]
+    mus = intial_param[1]
+    sigmas = intial_param[2]
+    log_lh = intial_param[3]
+
     # Перемещение окна
-    progress_bar = tqdm(range(0, num_windows, step))
-    prev_params = None
+    progress_bar = tqdm(range(step, num_windows, step))
+    
     for i in progress_bar:
         progress_bar.set_description(f"Обработка в окнах")
         window = series[i:i+window_size]
-        class_probs, mus, sigmas, LL_history = EM_sieved(window.values,
-                                      n_classes, 
-                                      convergence_accuracy_initial,
-                                      n_candidates,
-                                      convergence_accuracy_prime,
-                                      n_chosen_ones,       
-                                      random_seed,
-                                      prog_bar=EM_prog_bar,
-                                      prev_params=prev_params)
+        class_probs, mus, sigmas, log_lh = EM_adap(window.values,
+                                                conv_prime,
+                                                class_probs,
+                                                mus,
+                                                sigmas)
 
         ind = len(param_df.index) # Индекс строки в формируемой таблице
         if xaxis_id is not None: # Добавляет временные привзяки
@@ -530,62 +440,11 @@ def mixture_extraction(series,
         param_df.loc[ind, 'math_exp'] = mus
         param_df.loc[ind, 'st_dev'] = sigmas
         param_df.loc[ind, 'cl_prob'] = class_probs
-        param_df.loc[ind, 'LL_hist'] = LL_history[0][0] # best performence
-        prev_params = (mus, sigmas, class_probs, LL_history[0]) 
+        param_df.loc[ind, 'LL_hist'] = log_lh # best performence
+        # prev_params = (mus, sigmas, class_probs, log_lh) 
 
     return param_df
-
-#--------------------------------------------------------------------------------
-
-def mixture_param(series, window_size=1000, step=10, n_iter=None, eps=0.001, n_class=6,
-                  rseed=42, EM_prog_bar=False, xaxis_id=None):
-    
-    from pandas import MultiIndex, DataFrame
-    from tqdm.notebook import tqdm # шкала прогресса для ноутбука
-    
-    num_windows = len(series) - window_size + 1
-    
-    # Параметры для ЕМ-алгоритма
-    random_seed = rseed
-#     n_iterations = n_iter # Используется, если EM_with_iterations
-    epsilon=eps
-    n_classes = n_class
-    
-    # Создаем DataFrame с мультииндексом
-    sub_col = [f"low{i}" for i in range(1, n_classes+1)]
-    main_col = ['math_exp', 'st_dev', 'cl_prob']
-    col = MultiIndex.from_product([main_col, sub_col])
-    param_df = DataFrame(columns=col,dtype=float)
-    
-    param_df.attrs = {"data_name": series.name,
-            "data_length": len(series),
-            "window_size": window_size,
-            "step_size": step,
-            "num_of_iter": n_iter,
-            "eps": epsilon,
-            "num_of_lows": n_class,
-            "custom_xaxis": []}
-
-    # Перемещение окна
-    for i in tqdm(range(0, num_windows, step)):
-        window = series[i:i+window_size]
-        class_probs, mus, sigmas = EM(window.values,
-                                      n_classes, 
-                                      epsilon,
-                                      random_seed,
-                                      prog_bar=EM_prog_bar)
-        
-        ind = len(param_df.index) # Индекс строки в формируемой таблице
-        if xaxis_id is not None: # Добавляет временные привзяки
-            rel_i = series.index[i] # Индекс, привязанный к исходным данным
-            (param_df.attrs.get('custom_xaxis')).append(xaxis_id[rel_i])
-        param_df.loc[ind, 'math_exp'] = mus
-        param_df.loc[ind, 'st_dev'] = sigmas
-        param_df.loc[ind, 'cl_prob'] = class_probs
-
-
-    return param_df
-#--------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 
 def entrophy(mixtures):
     columns = list(mixtures.columns)
@@ -604,31 +463,3 @@ def entrophy(mixtures):
     H = entropy(class_weights, axis=0)
     return H
 
-def log_likelihood(mixture, series):
-    from numpy import sum as npsum, log as nplog
-    import numpy as np
-    from scipy.special import logsumexp
-    from tqdm import tqdm
-    import tensorflow_probability as tpf
-    log_likelihood_history = []
-    
-    class_probs = mixture.loc[:,'cl_prob'].values
-    mus = mixture.loc[:,'math_exp'].values
-    sigmas = mixture.loc[:,'st_dev'].values
-    for row in range(mixture.shape[0]):
-        # Вычисление маргинальной функции правдоподобия по сгенерированным параметрам
-        log_likelihood = npsum(
-            logsumexp(
-                nplog(class_probs[row])
-                +
-                tpf.distributions.Normal(loc=mus[row], scale=sigmas[row]).log_prob(
-                    series.reshape(-1, 1)
-                ).numpy()
-                ,
-                axis=1
-            )
-            ,
-            axis=0
-        )
-        log_likelihood_history.append(log_likelihood)
-    return log_likelihood_history
