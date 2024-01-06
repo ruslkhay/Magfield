@@ -363,19 +363,19 @@ def EM_sieved(
     return best_class_probs, best_mus, best_sigmas, log_likelihood_history_chosen_ones_array
 #-------------------------------------------------------------------------------
 
-def mixture_extraction(series, 
-                       window_size=1000, 
-                       step=10, 
-                       n_iter=None, 
-                       n_iter_initial=100, 
-                       conv_prime=0.0001,
-                       n_class=6,
-                       n_candidates = 11,
-                       n_choose=1,
-                       rseed=42, 
-                       EM_prog_bar=False, 
-                       xaxis_id=None):
-    
+def mixture_extraction(
+                    series,               
+                    window_size=1000, 
+                    step=10, 
+                    n_iter=None, 
+                    n_iter_initial=100, 
+                    conv_prime=0.0001,
+                    n_class=6,
+                    n_candidates = 11,
+                    n_choose=1,
+                    rseed=42, 
+                    EM_prog_bar=False, 
+                    xaxis_id=None):
     from pandas import MultiIndex, DataFrame
     from tqdm.notebook import tqdm # шкала прогресса для ноутбука
     

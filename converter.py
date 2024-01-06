@@ -99,7 +99,7 @@ def fill_nan(data_frame):
             if isna(data_frame.loc[i, col]):
                 previous_val = data_frame.loc[i-1, col]
                 next_val = data_frame.loc[i+1, col]
-                if isna(previous_val) and pd.isna(next_val):  # если оба значения NaN
+                if isna(previous_val) and isna(next_val):  # если оба значения NaN
                     data_frame.loc[i, col] = 0  # заменяем на 0 или другое значение по умолчанию
                 elif isna(previous_val):  # если предыдущее значение NaN
                     data_frame.loc[i, col] = next_val
