@@ -8,7 +8,7 @@ What do i want from this class:
     4.  
 '''
 
-class Converter:
+class converter:
     dtype = {
         'Year': int, # str на самом деле, просто с int удобнее работать
         'Day': int, # str
@@ -25,27 +25,27 @@ class Converter:
         'ASY/D': int,
         'ASY/H': int }
     
-    from os import getcwd
+    
     #! Write an exeption for case if dir arg is not a directory. Use os module
-    def __init__(self, / , dir=getcwd(),  *args: str or tuple(str,...)) -> None:
+    def __init__(
+            self, 
+            *args: str or tuple(str,...), 
+            dir: str # relevant directory path
+             # relevant paths to data
+            ) -> None:
+        from os import getcwd
         from os.path import join
         from pandas import read_csv
-        
-        [self.__setattr__(arg.rstrip('.csv'), 
-                          read_csv(join(dir, arg), dtype=self.dtype))
-                          for arg in args]
-        self.dir = dir
-        
-    def change_time_format(self, *specific_attrs):
-        from os.path import isfile, join
-        from converter import time_related_id
 
-        attrs = specific_attrs or self.__dict__.keys() 
-        check_isfile = lambda attr_name: isfile(
-            join(self.dir, attr_name +'.csv')
-        )
-        dataframes_attrs = list(filter(check_isfile, attrs))
-        [time_related_id(self.__getattribute__(df)) for df in dataframes_attrs]
+        dir = join(getcwd(), dir)
+        [self.__setattr__(
+            arg.rstrip('.csv'),
+            read_csv(
+                join(dir, arg),
+                dtype=self.dtype)
+            )
+            for arg in args]
+        self.dir = dir
 
     @staticmethod
     # Создает колонку с временным форматов, поддерживаемым html
@@ -68,7 +68,7 @@ class Converter:
             'Year', 'Date', 'Hour', 'Minute'
         '''
         from pandas import to_datetime
-        
+
         # Функция для преобразования порядкового номера дня в году в дату
         def day_to_date(day):
             date = to_datetime(day, format='%j')
@@ -82,9 +82,43 @@ class Converter:
             return f'{value:02}'
 
         # Создание столбца 'ydhm_id'
-        make_cell = lambda row: str(f"{row['Year']}"+
-                                    f"-{row['Date']}"+
-                                    f"T{format_value(row['Hour'])}"+
-                                    f":{format_value(row['Minute'])}")
+        make_cell = lambda row: str(
+            f"{row['Year']}"+
+            f"-{row['Date']}"+
+            f"T{format_value(row['Hour'])}"+
+            f":{format_value(row['Minute'])}")
         dataframe['ydhm_id'] = dataframe.apply(make_cell, axis=1)
-        dataframe.drop(['Year', 'Date', 'Hour', 'Minute'], axis=1, inplace=True)    
+
+        # Rid of useless columns
+        dataframe.drop(
+            ['Year', 'Day', 'Hour', 'Minute', 'Date'], 
+            axis=1, 
+            inplace=True)            
+    
+    def change_time_format(self, *specific_attrs):
+        from os.path import isfile, join
+
+        attrs = specific_attrs or self.__dict__.keys() 
+        check_isfile = lambda attr_name: isfile(
+            join(self.dir, attr_name +'.csv')
+        )
+        dataframes_attrs = list(filter(check_isfile, attrs))
+        [self.time_related_id(
+            self.__getattribute__(df)
+            ) 
+            for df in dataframes_attrs]
+        
+    # def apply_to_all_csv_attr(self, func):
+    #     attrs = specific_attrs or self.__dict__.keys() 
+    #     check_isfile = lambda attr_name: isfile(
+    #         join(self.dir, attr_name +'.csv')
+    #     )
+    #     dataframes_attrs = list(filter(check_isfile, attrs))
+    #     [func(
+    #         self.__getattribute__(df)
+    #         ) 
+    #         for df in dataframes_attrs]
+
+
+    def save(self):
+        pass
