@@ -1,7 +1,6 @@
 '''
 This class will contain all enitial functionality for data processing
-What do i want:
-    1. '''
+'''
 import tensorflow_probability as tfp
 
 def log_likelihood(
@@ -30,8 +29,31 @@ def log_likelihood(
     
     return result
 
-def check_validaty(respons):
-    pass
+def log_likelihood_from_book(
+        class_probs, 
+        mus, 
+        sigmas, 
+        data
+        ): 
+    # Calculate the marginal log likelihood
+    import numpy as np
+    from scipy.special import logsumexp
+
+    densities = tfp.distributions.Normal(
+                    loc=mus, 
+                    scale=sigmas
+                    ).prob(data.reshape(-1, 1)).numpy()
+    
+    result = np.sum(
+        np.log(
+            np.sum(
+                class_probs * densities,
+                axis=1
+            )
+        )
+    )
+    
+    return result
 
 def E_step(
         dataset, 
@@ -88,29 +110,31 @@ def M_step(
 
     return class_probs, mus, sigmas
 
-def reset_params(class_probs, mus, sigmas):
-    from numpy.random import dirichlet, rand
+def initialize_params(num_comps, random_seed=42):
+    from numpy.random import dirichlet, rand, uniform, seed
     from numpy import ones
-    n_classes = len(class_probs)
-    class_probs = dirichlet(ones(n_classes))
-    mus, sigmas = rand(n_classes), rand(n_classes)
+
+    seed(random_seed)
+
+    class_probs = dirichlet(ones(num_comps))
+    mus = rand(num_comps)*20
+    sigmas = uniform(0.5, num_comps*2, num_comps)
+
     return class_probs, mus, sigmas
 
-def EM_iterative(
+def EM_iter(
     dataset,
     n_iterations,
     class_probs_initial,
     mus_initial,
     sigmas_initial,
     ):
-    from tqdm import tqdm
     from numpy import isnan, any
-
     class_probs = class_probs_initial.copy()
     mus = mus_initial.copy()
     sigmas = sigmas_initial.copy()
-
-    for i in tqdm(range(n_iterations)):
+    i = 0
+    while i <= n_iterations:
 
         responsibilities = E_step(
             dataset, 
@@ -122,15 +146,16 @@ def EM_iterative(
         
         # Если попалась неудачная генерация
         if any(isnan(responsibilities)):
-            class_probs, mus, sigmas = reset_params(class_probs, mus, sigmas)
-            print('Bad selection. Restarting the iteration ', i)
-            i = i - 1
+            class_probs, mus, sigmas = initialize_params(len(class_probs))
+            print('Bad selection in ITER. Restarting the iteration ', i)
+            i = 0
             continue
 
         class_probs, mus, sigmas = M_step(
             dataset, 
             responsibilities)
         
+        i+=1
     # Возвращаю значение ф-ии правд-ия для лучего результата
     log_lh = log_likelihood(class_probs, mus, sigmas, dataset)
     return class_probs, mus, sigmas, log_lh
@@ -143,7 +168,7 @@ def EM_adap(
     sigmas_initial,
     ):
     import numpy as np
-    from numpy import isnan, any
+    from numpy import isnan, any, all, zeros, abs as numpy_abs
     
     n_classes = class_probs_initial.shape[0]
     epsilon = convergence_accuracy
@@ -152,8 +177,10 @@ def EM_adap(
     mus = mus_initial.copy()
     sigmas = sigmas_initial.copy()
 
-    prev_class_probs = np.zeros(n_classes) # intial valurs for condition
+    prev_class_probs = zeros(n_classes) # intial valurs for condition
+    prev_mus, prev_sigmas = zeros(n_classes), zeros(n_classes) 
     i=0
+
     while True:
         responsibilities = E_step(
             dataset, 
@@ -165,9 +192,9 @@ def EM_adap(
 
         # Если попалась неудачная генерация
         if any(isnan(responsibilities)):
-            class_probs, mus, sigmas = reset_params(class_probs, mus, sigmas)
-            print('Bad selection. Restarting the iteration ', i)
-            i = i - 1
+            class_probs, mus, sigmas = initialize_params(len(class_probs))
+            print('Bad selection in ADAP. Restarting the iteration ', i)
+            i = 0
             continue
 
         class_probs, mus, sigmas = M_step(
@@ -176,16 +203,22 @@ def EM_adap(
         i+=1
         
         # Stop-condition
-        if(np.all(class_probs - prev_class_probs <= epsilon)):
-            print(i," iteration's taken before convergance")
+        if(
+            all(numpy_abs(class_probs - prev_class_probs) <= epsilon) and
+            all(numpy_abs(mus - prev_mus <= epsilon)) and
+            all(numpy_abs(sigmas - prev_sigmas <= epsilon))
+           ):
+            # print(i," iteration's taken before convergance")
             break
         prev_class_probs = class_probs.copy()
+        prev_mus = mus.copy()
+        prev_sigmas = sigmas.copy()
 
     # Возвращаю значение ф-ии правд-ия для лучего результата
     log_lh = log_likelihood(class_probs, mus, sigmas, dataset)
 
-    if(np.any(np.abs(class_probs-class_probs_initial) > 0.2 )):
-        #Сортируем в правильном порядке
+    #Сортируем в правильном порядке
+    if(any(numpy_abs(class_probs-class_probs_initial) > 0.1 )):
         sorted_indices = sorted(range(len(class_probs_initial)),
                                 key=lambda k: class_probs_initial[k])
         class_probs = np.array([class_probs[i] for i in sorted_indices])
@@ -196,12 +229,12 @@ def EM_adap(
 
 def EM_sieved(
     dataset,
-    n_classes: int,
-    n_iter_initial: int,
-    convergence_accuracy_prime: float,
-    n_candidates=100, # кол-во наборов смесей
-    n_chosen_ones=1, # кол-во (лучших) наборов, которые мы хотим получить в результате
-    random_seed=42,
+    num_params: int,
+    num_iter_candid_initial: int = 100,
+    n_candid: int = 20, # кол-во наборов смесей
+    n_best_candid: int = 4, # кол-во (лучших) наборов, которые мы хотим получить в результате
+    accur_best_candid: float = 0.01,
+    random_seed: int = 42,
     prog_bar=False,
     prev_params=None
 ):
@@ -209,115 +242,65 @@ def EM_sieved(
     from tqdm.notebook import tqdm
     
     # (1) Генерирование первичных наборов параметров смесей
-
-    Mus = []
-    Sigmas = []
-    Class_probs = []
-    LL_histories = []
-    
+    all_candid_params = ([], [], [], [])
+    add_params = lambda param_list, predic: [param.append(val) for param, val 
+                                             in zip(param_list, predic)]
+            
     # Возвращает шкалу прогресса либо область итерирования
-    def pbar(span, title): 
-        return tqdm(span).set_description(title) if prog_bar else span
+    pbar = lambda span, title: tqdm(span, title) if prog_bar else span
 
     # Просеивание кандитатов    
-    for candidate_id in pbar(range(n_candidates), "Генерация параметров"):
-        
+    for candidate_id in pbar(range(n_candid), "Candidates generation"):
         # Задает новое состояние случайного генератора при смене кандидата
-        np.random.seed(random_seed + candidate_id)
-        
-        # Инициализация случайным образом начальных значений
-        mus = np.random.rand(n_classes)
-        sigmas = np.random.rand(n_classes)
-        class_probs = np.random.dirichlet(np.ones(n_classes))
-        
+        rseed = random_seed + candidate_id
         # Рассчитываем параметры ЕМ-алгоритмом
-        class_probs, mus, sigmas, ll = EM_iterative(
+        predictions = EM_iter(
             dataset,
-            n_iter_initial,
-            class_probs,
-            mus,
-            sigmas,
+            num_iter_candid_initial,
+            *initialize_params(num_params, random_seed=random_seed)
         )
-        
         # Сохраняем параметры
-        Mus.append(mus)
-        Sigmas.append(sigmas)
-        Class_probs.append(class_probs)
-        LL_histories.append(ll)
+        add_params(all_candid_params, predictions)
 
     # Добавляем предыдущие парам-ы, если нужно
     if prev_params is not None:
-        Mus.append(prev_params[0])
-        Sigmas.append(prev_params[1])
-        Class_probs.append(prev_params[2])
-        LL_histories.append(prev_params[3])
+        add_params(all_candid_params, prev_params)
 
     # (2) Отбор результатов.
-    log_likelihood_history_array = np.array(LL_histories)
-    
+    probs, mus, sigmas, loglike = all_candid_params
+
     # Выбор лучших параметров наборов и отсеивание лишних результатов
-    ordered_candidate_ids = np.argsort( - log_likelihood_history_array)
-    chosen_ones_ids = ordered_candidate_ids[:n_chosen_ones]
+    ids_best = np.argsort(-np.array(loglike))[:n_best_candid]
+    best_candid_params = ([], [], [], [])
 
-    # (3) Запуск ЕМ-алгоритма для лучших параметров смесей
-    Mus_chosen = []
-    Sigmas_chosen = []
-    Class_probs_chosen = []
-    LL_histories_chosen = []
+    # from debug_prints import candid_print
+    # candid_print(probs, loglike)
+    # print(np.mean(loglike))
+    # candid_print([probs[bid] for bid in ids_best], 
+    #              [loglike[bid] for bid in ids_best],
+    #              'best, based on loglikelihood')
+    
+    # candid_print([mus[bid] for bid in ids_best], text="Mus for best ones")
+    # candid_print([sigmas[bid] for bid in ids_best], text="Sigmas for best ones")
 
-    for chosen_one_id in pbar(chosen_ones_ids+[-1], "ЕМ для лучших парам-ов"):
-        class_probs, mus, sigmas, log_likelihood_history = EM_adap(
+
+    for i in pbar(ids_best, "ЕМ для лучших парам-ов"):
+        predictions = EM_adap(
             dataset,
-            convergence_accuracy_prime,
-            Class_probs[chosen_one_id],
-            Mus[chosen_one_id],
-            Sigmas[chosen_one_id],
+            accur_best_candid,
+            probs[i],
+            mus[i],
+            sigmas[i],
         )
-
-        Mus_chosen.append(mus)
-        Sigmas_chosen.append(sigmas)
-        Class_probs_chosen.append(class_probs)
-        LL_histories_chosen.append(log_likelihood_history)
+        add_params(best_candid_params, predictions)
     
-    # (4) Выбор лучшего кандидата
-    
-    # Подгоняю под один размер. Сохраняю историю лучших. Нахожу номер наилучшего
+    # (3) Выбор лучшего кандидата
+    probs, mus, sigmas, loglike = best_candid_params
 
-    log_likelihood_history_chosen_ones_array = np.array(LL_histories_chosen)
-    # log_likelihood_history_chosen_ones_array = np.array(log_likelihood_history_chosen_ones_list)
+    loglike_history = np.sort(np.array(loglike))
+    id_prime = np.argsort(-np.array(loglike))[0]
+    prob = probs[id_prime]
+    mu = mus[id_prime]
+    sigma = sigmas[id_prime]
 
-    ordered_chosen_ones_ids = np.argsort( - log_likelihood_history_chosen_ones_array)
-    
-    # Выделяю лучщие параметры
-    best_chosen_one_id = ordered_chosen_ones_ids[0]
-    best_mus = Mus_chosen[best_chosen_one_id]
-    best_sigmas = Sigmas_chosen[best_chosen_one_id]
-    best_class_probs = Class_probs_chosen[best_chosen_one_id]
-
-    # Сортировка первого списка и получение индексов перестановки
-    # sorted_indices = sorted(range(len(best_class_probs)),
-    #                          key=lambda k: best_class_probs[k])
-    # best_class_probs = np.array([best_class_probs[i] for i in sorted_indices])
-    # best_mus = np.array([best_mus[i] for i in sorted_indices])
-    # best_sigmas = np.array([best_sigmas[i] for i in sorted_indices])
-
-
-    return best_class_probs, best_mus, best_sigmas, log_likelihood_history_chosen_ones_array
-
-
-class Algorithm:
-    def __init__(self, series, adj_var, *params):
-        self.series = series
-        self.params = params
-
-class IterAlg(Algorithm):
-    def __init__(self, series, iterations):
-        super().__init__(series)
-        self.iterations = iterations
-
-class AdaptAlg(Algorithm):
-    def __init__(self, series, accuracy):
-        super().__init__(series)
-        self.accuracy = accuracy
-
-
+    return prob, mu, sigma, loglike_history
