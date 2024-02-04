@@ -111,7 +111,7 @@ def construct_mixture3D(mixture, series, window_size=1000, bins=20, step=1):
         dz = dens.flatten()
         df.loc[len(df.index)] = [xpos, ypos, dz]
     return df
-import silence_tensorflow.auto
+# import silence_tensorflow.auto
 #-------------------------------------------------------------------------------
 
 def log_likelihood(class_probs, mus, sigmas, data): 
