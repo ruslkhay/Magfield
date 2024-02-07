@@ -134,6 +134,7 @@ def EM_iter(
     mus = mus_initial.copy()
     sigmas = sigmas_initial.copy()
     i = 0
+    count = 0
     while i <= n_iterations:
 
         responsibilities = E_step(
@@ -146,7 +147,8 @@ def EM_iter(
         
         # Если попалась неудачная генерация
         if any(isnan(responsibilities)):
-            class_probs, mus, sigmas = initialize_params(len(class_probs))
+            count += 1
+            class_probs, mus, sigmas = initialize_params(len(class_probs), count)
             print('Bad selection in ITER. Restarting the iteration ', i)
             i = 0
             continue
@@ -180,7 +182,7 @@ def EM_adap(
     prev_class_probs = zeros(n_classes) # intial valurs for condition
     prev_mus, prev_sigmas = zeros(n_classes), zeros(n_classes) 
     i=0
-
+    count = 0
     while True:
         responsibilities = E_step(
             dataset, 
@@ -192,7 +194,8 @@ def EM_adap(
 
         # Если попалась неудачная генерация
         if any(isnan(responsibilities)):
-            class_probs, mus, sigmas = initialize_params(len(class_probs))
+            count += 1
+            class_probs, mus, sigmas = initialize_params(len(class_probs),count)
             print('Bad selection in ADAP. Restarting the iteration ', i)
             i = 0
             continue
@@ -236,11 +239,11 @@ def EM_sieved(
     accur_best_candid: float = 0.01,
     random_seed: int = 42,
     prog_bar=False,
-    prev_params=None
+    prev_pmsl=None
 ):
     import numpy as np
     from tqdm.notebook import tqdm
-    
+
     # (1) Генерирование первичных наборов параметров смесей
     all_candid_params = ([], [], [], [])
     add_params = lambda param_list, predic: [param.append(val) for param, val 
@@ -257,14 +260,14 @@ def EM_sieved(
         predictions = EM_iter(
             dataset,
             num_iter_candid_initial,
-            *initialize_params(num_params, random_seed=random_seed)
+            *initialize_params(num_params, random_seed=rseed)
         )
         # Сохраняем параметры
         add_params(all_candid_params, predictions)
 
     # Добавляем предыдущие парам-ы, если нужно
-    if prev_params is not None:
-        add_params(all_candid_params, prev_params)
+    if prev_pmsl is not None:
+        add_params(all_candid_params, prev_pmsl)
 
     # (2) Отбор результатов.
     probs, mus, sigmas, loglike = all_candid_params
@@ -272,7 +275,7 @@ def EM_sieved(
     # Выбор лучших параметров наборов и отсеивание лишних результатов
     ids_best = np.argsort(-np.array(loglike))[:n_best_candid]
     best_candid_params = ([], [], [], [])
-
+    
     # from debug_prints import candid_print
     # candid_print(probs, loglike)
     # print(np.mean(loglike))
@@ -297,10 +300,16 @@ def EM_sieved(
     # (3) Выбор лучшего кандидата
     probs, mus, sigmas, loglike = best_candid_params
 
-    loglike_history = np.sort(np.array(loglike))
+    # from debug_prints import candid_print
+    # ids_best = np.argsort(-np.array(loglike))
+    # candid_print([probs[bid] for bid in ids_best], 
+    #              [loglike[bid] for bid in ids_best],
+    #              'best, based on loglikelihood')
+    
+    loglike_history = np.sort(np.array(loglike))[::-1]
     id_prime = np.argsort(-np.array(loglike))[0]
     prob = probs[id_prime]
     mu = mus[id_prime]
     sigma = sigmas[id_prime]
 
-    return prob, mu, sigma, loglike_history
+    return prob, mu, sigma, loglike_history[0]

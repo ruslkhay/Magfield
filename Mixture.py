@@ -1,10 +1,3 @@
-class frame:
-    def __init__(self, *, size, step, bins) -> None:
-        self.size = size
-        self.step = step
-        self.BINS = bins
-
-
 class mixture:
     '''
     Create static, randomly generated mixtures of distributions.
@@ -21,21 +14,22 @@ class mixture:
             num_comps: int, # amount of different r.v. in mixture
             distrib: tfp.distributions, # type of r.v. distribution
             random_seed: int = 42,
+            rand_initialize = False,
             comp_probs: np.array = None, # the 'weights' of corresponding r.v.
             math_expects: np.array = None, # the 'means' of corr-ding r.v.
             stand_devs: np.array = None # the 'dispersion' of corr-ding r.v.
     ):
         self.num_comps = num_comps
         self.distrib = distrib
-        
-        # Random initialization of main mixture parameters
-        self.initialize_probs_mus_sigmas(random_seed)
+        self._rseed = random_seed
+        if rand_initialize:
+            # Random initialization of main mixture parameters
+            self.initialize_probs_mus_sigmas(random_seed)
 
         # self.probs = comp_probs
         # self.mus = math_expects
         # self.sigmas = stand_devs
-
-
+    
     def __str__(self) -> str:
         return str(self.__dict__).replace(' \'','\n \'')
 
@@ -169,6 +163,33 @@ class mixture:
             }
         return self.volat_comps
     
+    @property
+    def parameters(self):
+        res = dict(
+            probs=self.probs,
+            mus=self.mus,
+            sigmas=self.sigmas
+        )
+        return res
+    
+    @parameters.setter
+    def parameters(
+        self,
+        vals: dict
+        ):
+        self.probs = vals.get('probs')
+        self.mus = vals.get('mus')
+        self.sigmas = vals.get('sigmas')
+
+    def _update_params(
+            self,
+            functions_list,
+            point
+    ):
+        for param, funcs in zip(('probs','mus','sigmas'), functions_list):
+            # new_val = self.__getattribute__(param) + func(point)
+            new_val = [func(point) for func in funcs]
+            self.__setattr__(param, new_val)
     #---------------------------------------------------------------------------
 
     def EM_iterative(
@@ -225,7 +246,8 @@ class mixture:
             num_candid,
             num_best_candid,
             accur_final,
-            random_seed
+            random_seed,
+            **kwargs
     ):
         from Algorithms import EM_sieved
         candidates = EM_sieved(
@@ -235,12 +257,248 @@ class mixture:
             n_candid=num_candid,
             n_best_candid=num_best_candid,
             accur_best_candid=accur_final,
-            random_seed=random_seed
+            random_seed=random_seed,
+            **kwargs
         )
         return candidates
     #---------------------------------------------------------------------------
-    def plot(self):
+    def show_samples(self):
         from plotly.express import scatter
         fig = scatter(x=self.samples,
                       y=self.samples_probs)
         return fig
+#---------------------------------------------------------------------------
+
+class DynamicMixture(mixture):
+    def __init__(
+            self,
+            num_comps,
+            distrib,
+            window_shape: (int, int) = None,
+            time_span = None,
+            records = None,
+            random_seed = 42
+        ) -> object:
+
+        super().__init__(num_comps, distrib, random_seed)
+
+        self.time_span = time_span
+        self.records = records
+        
+        # Container for window shape info
+        self.frame = dict(
+            length=window_shape[0], 
+            step=window_shape[1]
+        )
+        # Container for mixtures parameters and time relevant indexes info
+        self.__params = dict(
+            probs=[],
+            mus=[],
+            sigmas=[],
+            llh=[]
+        )
+        # Container for synthetic data (used for testing EMs)
+        self.samples = dict(
+            records=[],
+            probs=[]
+        )
+
+    @staticmethod
+    def _update_dict(
+            dic,
+            new_vals
+    ) -> None:
+        '''
+        Extend dict with given values
+        '''
+        print(new_vals)
+        for name, value in zip(dic.keys(), new_vals):
+            dic[name].append(value)
+        
+    # ROW/ INCORRECT!!!
+    def generate_samples(
+            self,
+            n_samples: int=1,
+            params_behave = None,
+            random_seed: int = 42
+        ) -> None:
+        '''
+        Generates multitude of mixture objects. Where each next mixture is 
+        made out of previous one, but corrected by paramateres time behaviour
+        '''
+        # Initial mixture
+        curr_mix = mixture(
+            self.num_comps,
+            self.distrib,
+            self._rseed,
+            rand_initialize=False
+            )
+        
+        # Initialize time axis if needed
+        if self.time_span is None: 
+            self.time_span = tuple(range(n_samples))
+
+        for t in self.time_span:
+            # Updating initial mixture parameters
+            curr_mix._update_params(
+                functions_list=params_behave,
+                point=t
+            )
+
+            # Generating data
+            curr_mix.generate_samples(
+                n_samples,
+                random_seed
+            )
+
+            # Saving data
+            self.samples['records'].append(*curr_mix.samples)
+            self.samples['probs'].append(*curr_mix.samples_probs)
+
+            # Saving parameters
+            self.__class__._update_dict(
+                self.samples['params'],
+                new_vals=(
+                    t, # stands for time_id
+                    curr_mix.probs,
+                    curr_mix.mus,
+                    curr_mix.sigmas,
+                    curr_mix.log_likelihood(curr_mix.samples) # stands for llh
+                )
+            )
+    
+    def _window_segregation(self, data):
+        '''
+        Segregate given data into data chunks, corresponding to window size
+        '''
+        from numpy.lib.stride_tricks import sliding_window_view
+
+        windows = sliding_window_view(
+            data,
+            self.frame.get('length')
+        )[::self.frame.get('step')]
+
+        return windows
+
+    def predict(
+            self,
+            data,
+            EM_params = dict(
+                iter_initial=20,
+                num_candid=40,
+                num_best_candid=8,
+                accur_final=0.001
+            ),
+            random_seed = 42
+        ):
+        """
+        On each windows applies sieving EM algorithm on freshly generated 
+        mixture parameters 'candidates' 
+        """
+        from tqdm.notebook import tqdm
+        record_wind = self._window_segregation(data)
+        
+        first_wind = record_wind[0]
+        record_wind = record_wind[1:]
+        
+        initial_guess = super().EM_sieving(
+            dataset=first_wind,
+            **EM_params,
+            random_seed=random_seed
+        )
+
+        i = 0
+        for frame in tqdm(record_wind):
+            temporal_guess = super().EM_sieving(
+                dataset=frame,
+                **EM_params,
+                random_seed=random_seed,
+                prev_pmsl=initial_guess
+            )
+            self._update_dict(
+                self.__params,
+                (i, *temporal_guess)
+                )
+            initial_guess = temporal_guess
+        return "finished"
+    
+    def predic_light(
+        self,
+        data,
+        EM_params = dict(
+            iter_initial=20,
+            num_candid=40,
+            num_best_candid=8,
+            accur_final=0.001
+            ),
+        random_seed = 42
+        ):
+        """
+        Apply sieving EM only on starting window. Futher previously
+        calculated mixture parameters are fed to adaptive EM algorithm 
+        and no new parameters a.k.a. 'candidates' are considered
+        """
+        from tqdm.notebook import tqdm
+        record_wind = self._window_segregation(data)
+        
+        first_wind = record_wind[0]
+        record_wind = record_wind[1:]
+        
+        initial_guess = super().EM_sieving(
+            dataset=first_wind,
+            **EM_params,
+            random_seed=random_seed
+        )
+        self._update_dict(
+            self.__params,
+            initial_guess
+        )
+
+        i = 0
+        for frame in tqdm(record_wind):
+            temporal_guess = super().EM_sieving(
+                dataset=frame,
+                iter_initial=0,
+                num_candid=0,
+                num_best_candid=1,
+                prev_pmsl=initial_guess,
+                accur_final=0.001,
+                random_seed=random_seed
+            )
+
+            self._update_dict(
+                self.__params,
+                temporal_guess
+                )
+            initial_guess = temporal_guess
+        return "finished"
+    
+    def reshape_pms(self):
+        import numpy as np
+        for key, value in self.__params.items():
+            if key in ('probs', 'mus', 'sigmas'):
+                specif_comp_vals = []
+                for i in range(len(value[0])):
+                    specif_comp_vals.append(np.array([arr[i] for arr in value]))
+                self.__params[key] = specif_comp_vals
+            
+    @property
+    def parameters(self):
+        return self.__params
+    
+    @parameters.deleter
+    def parameters(self):
+        print('here')
+        for key in self.__params.keys():
+            self.__params[key] = []
+
+    
+    def show_parameters(
+            self
+    ):
+        from monitor import Monitor
+        return Monitor.construct_mixture_2Dplot(
+            num_comps=self.num_comps,
+            parameters=self.parameters,
+            x_ticks=self.time_span
+        )
