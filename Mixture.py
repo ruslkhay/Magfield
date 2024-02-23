@@ -260,7 +260,15 @@ class mixture:
             random_seed=random_seed,
             **kwargs
         )
-        return candidates
+        from numpy import array
+        # Сортировка первого списка и получение индексов перестановки
+        p, m, s, h = candidates
+        sorted_indices = sorted(range(len(s)),
+                                 key=lambda k: s[k])
+        p = array([p[i] for i in sorted_indices])
+        m = array([m[i] for i in sorted_indices])
+        s = array([s[i] for i in sorted_indices])
+        return p,m,s,h
     #---------------------------------------------------------------------------
     def show_samples(self):
         from plotly.express import scatter
@@ -274,7 +282,7 @@ class DynamicMixture(mixture):
             self,
             num_comps,
             distrib,
-            window_shape: (int, int) = None,
+            window_shape = None,
             time_span = None,
             records = None,
             random_seed = 42
@@ -297,6 +305,10 @@ class DynamicMixture(mixture):
             sigmas=[],
             llh=[]
         )
+
+        self.__proc_coefs = dict(
+
+        )
         # Container for synthetic data (used for testing EMs)
         self.samples = dict(
             records=[],
@@ -311,7 +323,6 @@ class DynamicMixture(mixture):
         '''
         Extend dict with given values
         '''
-        print(new_vals)
         for name, value in zip(dic.keys(), new_vals):
             dic[name].append(value)
         
@@ -454,7 +465,6 @@ class DynamicMixture(mixture):
             initial_guess
         )
 
-        i = 0
         for frame in tqdm(record_wind):
             temporal_guess = super().EM_sieving(
                 dataset=frame,
@@ -473,14 +483,25 @@ class DynamicMixture(mixture):
             initial_guess = temporal_guess
         return "finished"
     
-    def reshape_pms(self):
+    def reshape_params(
+            self,
+            params: tuple = ('probs', 'mus', 'sigmas')
+            ) -> dict:
+        '''
+        Segrigate parameters values by specific mixture component and 
+        unite it's values on each frame into one array. 
+        Previously params attribute contained values of all components on 
+        specific window (frame)
+        '''
         import numpy as np
+        reshaped = dict()
         for key, value in self.__params.items():
-            if key in ('probs', 'mus', 'sigmas'):
+            if key in params:
                 specif_comp_vals = []
                 for i in range(len(value[0])):
                     specif_comp_vals.append(np.array([arr[i] for arr in value]))
-                self.__params[key] = specif_comp_vals
+                reshaped[key] = specif_comp_vals
+        return reshaped
             
     @property
     def parameters(self):
@@ -492,13 +513,35 @@ class DynamicMixture(mixture):
         for key in self.__params.keys():
             self.__params[key] = []
 
-    
     def show_parameters(
             self
     ):
         from monitor import Monitor
+        probs_mus_sigmas = self.reshape_params()
         return Monitor.construct_mixture_2Dplot(
             num_comps=self.num_comps,
-            parameters=self.parameters,
+            parameters=probs_mus_sigmas,
             x_ticks=self.time_span
         )
+    
+    def reconstruct_process_coef(self):
+        '''
+        Calculate stochastic process coefficients by known mixture parameters
+        '''
+        import numpy as np
+        def procpar(pk, ak, bk):
+            'for a specific window'
+            a = np.sum(pk * ak)
+            b = np.sum(pk * (bk**2 * ak**2) - a**2)
+            return a, b
+        p = self.parameters['probs']
+        a = self.parameters['mus']
+        b = self.parameters['sigmas']
+        coef_a, coef_b = [],[]
+
+        for i in range(len(p)):
+            a_t, b_t = procpar(p[i], a[i], b[i])
+            coef_a.append(a_t)
+            coef_b.append(b_t)
+
+        return np.array(coef_a), np.array(coef_b)
