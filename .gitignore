@@ -1,22 +1,5 @@
-Data/bestBX_3c_seed42_eps0.1_w4500_st10.csv
-Data/BX_3c_seed42_eps0.001_w3000_st10.csv
-Data/BX_3c_seed1329_eps0.001_w3000_st10.csv
-Data/BX_3c_seed11501254_eps001_w4500_st6.csv
-Data/BX_3c_seed12111950_eps0.01_w2000_st1.csv
-Data/BX_3c_seed12111950.csv
-Data/BX_3c_seed24012000_eps001_w4500_st8.csv
-Data/BX_3c_seed24012000_eps001.csv
-Data/BX_3c_seed24012000.csv
-Data/BX_3c_seed27121954.csv
-Data/BX_3c.csv
-Data/BX_6c_seed24012000.csv
-Data/BX_6c_seed27121954.csv
-Data/BX_6c.csv
-Litreture/Статья 98.pdf
-.ipynb_checkpoints/Burr approximation-checkpoint.ipynb
-.ipynb_checkpoints/draft-checkpoint.ipynb
-.ipynb_checkpoints/Initial data processing-checkpoint.ipynb
-.ipynb_checkpoints/Magnetic_field_entropy-checkpoint.ipynb
-__pycache__/converter.cpython-311.pyc
-__pycache__/essentials.cpython-311.pyc
-__pycache__/histplot.cpython-311.pyc
+Data/
+Literature/
+.vscode/
+.ipynb_checkopoints
+__pycache__/
