@@ -263,11 +263,11 @@ class mixture:
         from numpy import array
         # Сортировка первого списка и получение индексов перестановки
         p, m, s, h = candidates
-        sorted_indices = sorted(range(len(s)),
-                                 key=lambda k: s[k])
-        p = array([p[i] for i in sorted_indices])
-        m = array([m[i] for i in sorted_indices])
-        s = array([s[i] for i in sorted_indices])
+        # sorted_indices = sorted(range(len(s)),
+        #                          key=lambda k: s[k])
+        # p = array([p[i] for i in sorted_indices])
+        # m = array([m[i] for i in sorted_indices])
+        # s = array([s[i] for i in sorted_indices])
         return p,m,s,h
     #---------------------------------------------------------------------------
     def show_samples(self):
