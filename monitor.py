@@ -1,8 +1,62 @@
-# custom_title = f"Компонента: {hist3D.attrs.get('data_name')}, " \
-#         f"кол-во данных: {hist3D.attrs.get('data_length')}, " \
-#         f"размер окна: {hist3D.attrs.get('window_size')}, "\
-#         f"кол-во интервалов {hist3D.attrs.get('bin_size')}, " \
-#         f"длина шага: {hist3D.attrs.get('step_size')}."
+def visualize_3D_hist(
+        hist3D: dict,
+        custom_title = 'Histogram'
+        ):
+        '''
+        Constructs a three-dimensional graph representing the dynamics of 
+        changes in histograms in depending on the position of the window. 
+        Section perpendicular to the y-axis "Window №." - is a histogram in the 
+        corresponding window.
+        '''
+        import plotly.graph_objects as go
+
+        # Выделение данных
+        x = hist3D['bins']
+        y = hist3D['wind_numb']
+        z = hist3D['hist_freq']
+
+        # Построение 3D поверхности
+        fig = go.Figure(
+            data=[
+                go.Surface(
+                    z=z, 
+                    x=x, 
+                    y=y)
+                ]
+            )
+
+        # Персонализация изолиний и проекции
+        custom_contours_z = dict(
+            show=True,
+            usecolormap=True,
+            highlightcolor="limegreen",
+            project_z=True
+        )
+        fig.update_traces(contours_z = custom_contours_z)
+
+        # Персонализация осей
+        custom_scene = dict(
+            xaxis = dict(
+                title='Bins',
+                color='grey'
+                ),
+            yaxis = dict(
+                title='№ Wind',
+                color='grey'
+                ),
+            zaxis = dict(
+                title = 'Increments',
+                color = 'grey'
+                )
+            )
+        
+        # Персонализация графика
+        fig.update_layout(title=custom_title,
+                        scene=custom_scene,
+                        autosize=True,
+                        width=1200, height=600,
+                        margin=dict(l=65, r=50, b=65, t=90))
+        return fig
 
 # Basic data visualizations. 
 TIME_RELATED_XTICK= [
@@ -185,63 +239,3 @@ def construct_mixture_2Dplot(
                     height=400*len(params)
                     )
     return fig
-
-def visualize_3D_hist(
-        hist3D: dict,
-        custom_title = 'Histogram'
-        ):
-        '''
-        Constructs a three-dimensional graph representing the dynamics of 
-        changes in histograms in depending on the position of the window. 
-        Section perpendicular to the y-axis "Window №." - is a histogram in the 
-        corresponding window.
-        '''
-        import plotly.graph_objects as go
-
-        # Выделение данных
-        x = hist3D['bins']
-        y = hist3D['wind_numb']
-        z = hist3D['hist_freq']
-
-        # Построение 3D поверхности
-        fig = go.Figure(
-            data=[
-                go.Surface(
-                    z=z, 
-                    x=x, 
-                    y=y)
-                ]
-            )
-
-        # Персонализация изолиний и проекции
-        custom_contours_z = dict(
-            show=True,
-            usecolormap=True,
-            highlightcolor="limegreen",
-            project_z=True
-        )
-        fig.update_traces(contours_z = custom_contours_z)
-
-        # Персонализация осей
-        custom_scene = dict(
-            xaxis = dict(
-                title='Bins',
-                color='grey'
-                ),
-            yaxis = dict(
-                title='№ Wind',
-                color='grey'
-                ),
-            zaxis = dict(
-                title = 'Increments',
-                color = 'grey'
-                )
-            )
-        
-        # Персонализация графика
-        fig.update_layout(title=custom_title,
-                        scene=custom_scene,
-                        autosize=True,
-                        width=1200, height=600,
-                        margin=dict(l=65, r=50, b=65, t=90))
-        return fig

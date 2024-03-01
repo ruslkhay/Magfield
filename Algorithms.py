@@ -1,6 +1,29 @@
 '''
 This class will contain all enitial functionality for data processing
 '''
+import numpy as np
+# Debug prints
+round_sort = lambda param, n: [round(elem, n) for elem in np.sort(param)]
+
+def candid_print(
+        sertian_param, 
+        loglikelihood=None, 
+        text='INER print probs best'
+    ):
+    if loglikelihood:
+        print(text, 
+            *[f"{round(llh,4)} | {round_sort(param, 4)}" for 
+                param, llh in zip(sertian_param, loglikelihood)], 
+                '\n', 
+                sep='\n\t'
+                )
+    else:
+        print(text, 
+            *[f"{round_sort(param, 4)}" for param in sertian_param], 
+            '\n', 
+            sep='\n\t'
+            )
+
 import tensorflow_probability as tfp
 
 def log_likelihood(
@@ -276,7 +299,6 @@ def EM_sieved(
     ids_best = np.argsort(-np.array(loglike))[:n_best_candid]
     best_candid_params = ([], [], [], [])
     
-    # from debug_prints import candid_print
     # candid_print(probs, loglike)
     # print(np.mean(loglike))
     # candid_print([probs[bid] for bid in ids_best], 
@@ -300,7 +322,6 @@ def EM_sieved(
     # (3) Выбор лучшего кандидата
     probs, mus, sigmas, loglike = best_candid_params
 
-    # from debug_prints import candid_print
     # ids_best = np.argsort(-np.array(loglike))
     # candid_print([probs[bid] for bid in ids_best], 
     #              [loglike[bid] for bid in ids_best],

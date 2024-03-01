@@ -457,6 +457,8 @@ class DynamicMixture(mixture):
         calculated mixture parameters are fed to adaptive EM algorithm 
         and no new parameters a.k.a. 'candidates' are considered
         """
+        del self.parameters # clear results from previous launches
+
         from tqdm.notebook import tqdm
         record_wind = self._window_segregation(data)
         
@@ -516,6 +518,8 @@ class DynamicMixture(mixture):
         Calculate stochastic process coefficients by known mixture parameters
         '''
         import numpy as np
+
+        del self.process_coefs # clear results from previous launches
 
         def procpar(pk, ak, bk):
             'for a specific window'
