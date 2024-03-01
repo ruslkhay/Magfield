@@ -29,7 +29,7 @@ class converter:
     #! Write an exeption for case if dir arg is not a directory. Use os module
     def __init__(
             self, 
-            *args: str or tuple(str,...), 
+            *args, 
             dir: str # relevant directory path
              # relevant paths to data
             ) -> None:

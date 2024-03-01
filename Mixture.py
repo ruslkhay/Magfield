@@ -12,12 +12,12 @@ class mixture:
     def __init__(
             self,
             num_comps: int, # amount of different r.v. in mixture
-            distrib: tfp.distributions, # type of r.v. distribution
+            distrib, # type of r.v. distribution
             random_seed: int = 42,
             rand_initialize = False,
-            comp_probs: np.array = None, # the 'weights' of corresponding r.v.
-            math_expects: np.array = None, # the 'means' of corr-ding r.v.
-            stand_devs: np.array = None # the 'dispersion' of corr-ding r.v.
+            comp_probs = None, # the 'weights' of corresponding r.v.
+            math_expects = None, # the 'means' of corr-ding r.v.
+            stand_devs = None # the 'dispersion' of corr-ding r.v.
     ):
         self.num_comps = num_comps
         self.distrib = distrib
@@ -109,7 +109,7 @@ class mixture:
 
     def log_likelihood(
         self,
-        data: np.array
+        data
         ) -> float: 
         '''
         Calcualte value, representing the 'validaty' measure (or 'correctness')
@@ -194,7 +194,7 @@ class mixture:
 
     def EM_iterative(
             self,
-            dataset: np.array,
+            dataset,
             n_iterations: int
             ) -> tuple:
         '''
@@ -218,7 +218,7 @@ class mixture:
     
     def EM_adaptive(
             self,
-            dataset: np.array,
+            dataset,
             accuracy: float
             ):
         '''
@@ -263,11 +263,11 @@ class mixture:
         from numpy import array
         # Сортировка первого списка и получение индексов перестановки
         p, m, s, h = candidates
-        # sorted_indices = sorted(range(len(s)),
-        #                          key=lambda k: s[k])
-        # p = array([p[i] for i in sorted_indices])
-        # m = array([m[i] for i in sorted_indices])
-        # s = array([s[i] for i in sorted_indices])
+        sorted_indices = sorted(range(len(m)),
+                                 key=lambda k: m[k])
+        p = array([p[i] for i in sorted_indices])
+        m = array([m[i] for i in sorted_indices])
+        s = array([s[i] for i in sorted_indices])
         return p,m,s,h
     #---------------------------------------------------------------------------
     def show_samples(self):
@@ -282,22 +282,26 @@ class DynamicMixture(mixture):
             self,
             num_comps,
             distrib,
-            window_shape = None,
+            window_shape = (4300, 60),
             time_span = None,
             records = None,
             random_seed = 42
-        ) -> object:
+        ):
 
         super().__init__(num_comps, distrib, random_seed)
 
-        self.time_span = time_span
-        self.records = records
+        self.time_span = time_span # values to mark time axis
+        self.records = records # signal to process
         
         # Container for window shape info
         self.frame = dict(
             length=window_shape[0], 
             step=window_shape[1]
         )
+
+        # Container for each window
+        self.windows = []
+
         # Container for mixtures parameters and time relevant indexes info
         self.__params = dict(
             probs=[],
@@ -306,8 +310,10 @@ class DynamicMixture(mixture):
             llh=[]
         )
 
+        # Process X coefficients (dX=a(t)dt+b(t)dW)
         self.__proc_coefs = dict(
-
+            a=[],
+            b=[]
         )
         # Container for synthetic data (used for testing EMs)
         self.samples = dict(
@@ -386,10 +392,12 @@ class DynamicMixture(mixture):
 
         windows = sliding_window_view(
             data,
-            self.frame.get('length')
-        )[::self.frame.get('step')]
+            self.frame['length']
+        )[::self.frame['step']]
 
-        return windows
+        self.windows = windows
+
+        return self.windows
 
     def predict(
             self,
@@ -502,37 +510,17 @@ class DynamicMixture(mixture):
                     specif_comp_vals.append(np.array([arr[i] for arr in value]))
                 reshaped[key] = specif_comp_vals
         return reshaped
-            
-    @property
-    def parameters(self):
-        return self.__params
-    
-    @parameters.deleter
-    def parameters(self):
-        print('here')
-        for key in self.__params.keys():
-            self.__params[key] = []
 
-    def show_parameters(
-            self
-    ):
-        from monitor import Monitor
-        probs_mus_sigmas = self.reshape_params()
-        return Monitor.construct_mixture_2Dplot(
-            num_comps=self.num_comps,
-            parameters=probs_mus_sigmas,
-            x_ticks=self.time_span
-        )
-    
     def reconstruct_process_coef(self):
         '''
         Calculate stochastic process coefficients by known mixture parameters
         '''
         import numpy as np
+
         def procpar(pk, ak, bk):
             'for a specific window'
             a = np.sum(pk * ak)
-            b = np.sum(pk * (bk**2 * ak**2) - a**2)
+            b = np.sum(pk * (bk**2 * ak**2)) - a**2
             return a, b
         p = self.parameters['probs']
         a = self.parameters['mus']
@@ -543,5 +531,75 @@ class DynamicMixture(mixture):
             a_t, b_t = procpar(p[i], a[i], b[i])
             coef_a.append(a_t)
             coef_b.append(b_t)
+            self._update_dict(
+                self.__proc_coefs,
+                (a_t, b_t)
+            )
+        return np.array(coef_a), np.array(coef_b)    
 
-        return np.array(coef_a), np.array(coef_b)
+    @property
+    def parameters(self):
+        return self.__params
+    
+    @parameters.deleter
+    def parameters(self):
+        print('Deleted')
+        for key in self.__params.keys():
+            self.__params[key] = []
+
+    @property
+    def process_coefs(self):
+        return self.__proc_coefs
+    
+    @process_coefs.deleter
+    def process_coefs(self):
+        print('Deleted proc params')
+        for key in self.__proc_coefs.keys():
+            self.__proc_coefs[key] = []
+    
+    from plotly.graph_objects import Figure
+    def show_parameters(
+            self
+    ) -> Figure:
+        from monitor import construct_mixture_2Dplot
+        probs_mus_sigmas = self.reshape_params()
+        return construct_mixture_2Dplot(
+            num_comps=self.num_comps,
+            parameters=probs_mus_sigmas,
+            x_ticks=self.time_span
+        )
+    
+    def __construct_hist_3d(
+            self,
+            bins):
+        
+        hist_attr = {
+                'bins':[],
+                'wind_numb':[], # relative window number
+                'hist_freq':[] # 2D histogram values
+                }
+        from numpy import histogram, meshgrid
+
+        hist_attr = {
+            'bins':[],
+            'wind_numb':[], # relative window number
+            'hist_freq':[] # 2D histogram values
+            }
+        for i, window in enumerate(self.windows):
+            hist, _bins = histogram(window, bins=bins)
+            xpos, ypos = meshgrid(_bins[:-1], i)
+
+            hist_attr['bins'].append(xpos.flatten())
+            hist_attr['wind_numb'].append(ypos.flatten())
+            hist_attr['hist_freq'].append(hist.flatten())
+
+        return hist_attr
+
+    def show_hist_3d(
+            self,
+            bins
+            ):
+        from monitor import visualize_3D_hist
+        hist_attr = self.__construct_hist_3d(bins)
+        return visualize_3D_hist(hist_attr)
+        

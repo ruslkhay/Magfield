@@ -57,7 +57,7 @@ def log_likelihood_from_book(
 
 def E_step(
         dataset, 
-        distribution: tfp.distributions, 
+        distribution, 
         class_probs,
         mus, 
         sigmas
