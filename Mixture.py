@@ -446,9 +446,10 @@ class DynamicMixture(mixture):
         data,
         EM_params = dict(
             iter_initial=20,
-            num_candid=40,
+            num_candid=30,
             num_best_candid=8,
-            accur_final=0.001
+            accur_final=0.005,
+            prog_bar=True
             ),
         random_seed = 42
         ):

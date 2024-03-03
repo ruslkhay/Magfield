@@ -25,6 +25,10 @@ def candid_print(
             )
 
 import tensorflow_probability as tfp
+from scipy.stats import norm
+
+INIT_MUS = lambda dataset: len(dataset)
+INIT_SIG = lambda dataset: len(dataset)
 
 def log_likelihood(
         class_probs, 
@@ -93,7 +97,7 @@ def E_step(
             ).prob(
                 dataset.reshape(-1, 1)
                 ).numpy() * class_probs
-
+        
         responsibilities /= numpy_linalg_norm(
             responsibilities, 
             axis=1, 
@@ -133,16 +137,15 @@ def M_step(
 
     return class_probs, mus, sigmas
 
-def initialize_params(num_comps, random_seed=42):
+def initialize_params(num_comps, random_seed=42, avr=1, div=1):
     from numpy.random import dirichlet, rand, uniform, seed
     from numpy import ones
 
     seed(random_seed)
 
     class_probs = dirichlet(ones(num_comps))
-    mus = rand(num_comps)*20
-    sigmas = uniform(0.5, num_comps*2, num_comps)
-
+    mus = rand(num_comps)*avr
+    sigmas = uniform(0.1, 0.6, num_comps)*div
     return class_probs, mus, sigmas
 
 def EM_iter(
@@ -171,7 +174,12 @@ def EM_iter(
         # Если попалась неудачная генерация
         if any(isnan(responsibilities)):
             count += 1
-            class_probs, mus, sigmas = initialize_params(len(class_probs), count)
+            class_probs, mus, sigmas = initialize_params(
+                len(class_probs), 
+                count,
+                avr=INIT_MUS(dataset),
+                div=INIT_SIG(dataset)
+            )
             print('Bad selection in ITER. Restarting the iteration ', i)
             i = 0
             continue
@@ -218,7 +226,12 @@ def EM_adap(
         # Если попалась неудачная генерация
         if any(isnan(responsibilities)):
             count += 1
-            class_probs, mus, sigmas = initialize_params(len(class_probs),count)
+            class_probs, mus, sigmas = initialize_params(
+                len(class_probs),
+                count,
+                avr=INIT_MUS(dataset),
+                div=INIT_SIG(dataset)
+            )
             print('Bad selection in ADAP. Restarting the iteration ', i)
             i = 0
             continue
@@ -283,7 +296,11 @@ def EM_sieved(
         predictions = EM_iter(
             dataset,
             num_iter_candid_initial,
-            *initialize_params(num_params, random_seed=rseed)
+            *initialize_params(
+                num_params, 
+                random_seed=rseed,
+                avr=INIT_MUS(dataset),
+                div=INIT_SIG(dataset))
         )
         # Сохраняем параметры
         add_params(all_candid_params, predictions)
