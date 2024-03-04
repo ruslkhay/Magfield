@@ -26,9 +26,9 @@ class mixture:
             # Random initialization of main mixture parameters
             self.initialize_probs_mus_sigmas(random_seed)
 
-        # self.probs = comp_probs
-        # self.mus = math_expects
-        # self.sigmas = stand_devs
+        self.probs = comp_probs
+        self.mus = math_expects
+        self.sigmas = stand_devs
     
     def __str__(self) -> str:
         return str(self.__dict__).replace(' \'','\n \'')
@@ -86,8 +86,11 @@ class mixture:
         self.samples_probs = univariate_gmm.prob(
             self.samples).numpy()   
 
+    @staticmethod
     def construct_tpf_mixture(
-        self,
+        probs,
+        mus, 
+        sigmas
         ) -> tfp.distributions.MixtureSameFamily:
         '''
         Generaly irrelevant, but could be useful for future testing or
@@ -98,14 +101,40 @@ class mixture:
         # Data generation
         univariate_gmm = tfp.distributions.MixtureSameFamily(
             mixture_distribution=tfp.distributions.Categorical(
-                probs=self.probs
+                probs=probs
             ),
             components_distribution=tfp.distributions.Normal(
-                loc=self.mus,
-                scale=self.sigmas,
+                loc=mus,
+                scale=sigmas,
             )
         )
         return univariate_gmm
+    
+    @staticmethod
+    def KS_test(
+        probs,
+        mus,
+        sigmas,
+        arg
+    ):
+        return
+        from scipy.stats import kstest
+        import tensorflow_probability as tfp
+
+        # Data generation
+        norm_mixture = tfp.distributions.MixtureSameFamily(
+            mixture_distribution=tfp.distributions.Categorical(
+                probs=probs
+            ),
+            components_distribution=tfp.distributions.Normal(
+                loc=mus,
+                scale=sigmas,
+            )
+        )
+
+        mixture_cdf = lambda x: tpf_m_on_test.cdf(x).numpy()
+        kolmog_test = kstest(valid, mixture_cdf)
+        construct_tpf_mixture()
 
     def log_likelihood(
         self,
@@ -446,7 +475,7 @@ class DynamicMixture(mixture):
         data,
         EM_params = dict(
             iter_initial=20,
-            num_candid=30,
+            num_candid=40,
             num_best_candid=8,
             accur_final=0.005,
             prog_bar=True

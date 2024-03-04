@@ -352,3 +352,24 @@ def EM_sieved(
 
     return prob, mu, sigma, loglike_history[0]
 
+def KS_test(
+        data,
+        **mix_param
+):
+    from scipy.stats import kstest
+    import tensorflow_probability as tfp
+
+    # Data generation
+    norm_mixture = tfp.distributions.MixtureSameFamily(
+        mixture_distribution=tfp.distributions.Categorical(
+            probs=mix_param['probs']
+        ),
+        components_distribution=tfp.distributions.Normal(
+            loc=mix_param['mus'],
+            scale=mix_param['sigmas'],
+        )
+    )
+    
+    cdf = lambda x: norm_mixture.cdf(x).numpy()
+    kolmog_test = kstest(data, cdf)
+    return kolmog_test
