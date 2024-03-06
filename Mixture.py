@@ -109,32 +109,6 @@ class mixture:
             )
         )
         return univariate_gmm
-    
-    @staticmethod
-    def KS_test(
-        probs,
-        mus,
-        sigmas,
-        arg
-    ):
-        return
-        from scipy.stats import kstest
-        import tensorflow_probability as tfp
-
-        # Data generation
-        norm_mixture = tfp.distributions.MixtureSameFamily(
-            mixture_distribution=tfp.distributions.Categorical(
-                probs=probs
-            ),
-            components_distribution=tfp.distributions.Normal(
-                loc=mus,
-                scale=sigmas,
-            )
-        )
-
-        mixture_cdf = lambda x: tpf_m_on_test.cdf(x).numpy()
-        kolmog_test = kstest(valid, mixture_cdf)
-        construct_tpf_mixture()
 
     def log_likelihood(
         self,
@@ -298,6 +272,28 @@ class mixture:
         m = array([m[i] for i in sorted_indices])
         s = array([s[i] for i in sorted_indices])
         return p,m,s,h
+    
+    def Kolmogorov_EM(
+            self,
+            dataset,
+            train_perc = 0.5,
+            relprev_pos = 1,
+            random_seed = 42
+    ):
+        from Algorithms import EM_KS
+        from numpy import array
+        p,m,s,h = EM_KS(
+            dataset=dataset,
+            train_perc=train_perc,
+            class_probs_initial=self.probs,
+            mus_initial=self.mus,
+            sigmas_initial=self.sigmas,
+            relprev_pos=relprev_pos, 
+            random_seed=random_seed
+        )
+
+        return p,m,s,h
+    
     #---------------------------------------------------------------------------
     def show_samples(self):
         from plotly.express import scatter
@@ -424,10 +420,33 @@ class DynamicMixture(mixture):
             self.frame['length']
         )[::self.frame['step']]
 
-        self.windows = windows
+        # Don't know for what reasons, but method above returns read-only array
+        self.windows = windows.copy()
 
         return self.windows
 
+    def rewrite_as_normal_human_this_initialization(
+            self,
+            random_seed: int 
+            ) -> None: 
+        """
+        Generate initial values for mixture parameters.
+        Originaly number of components and their's distribution type should
+        be defined.
+        """
+        del self.parameters
+        from numpy.random import seed
+
+        from Algorithms import initialize_params
+
+        seed(random_seed)
+        
+        probs, mus, sigmas = initialize_params(self.num_comps, random_seed)
+        self._update_dict(
+            self.__params,
+            (probs, mus, sigmas, None)
+        )
+        
     def predict(
             self,
             data,
@@ -522,6 +541,55 @@ class DynamicMixture(mixture):
                 )
             initial_guess = temporal_guess
         return "finished"
+    
+    def predic_ks(
+        self, 
+        data,
+        train_perc, # precendge of validationaly dataset size
+        relprev_pos,
+        random_seed=42
+    ):
+        """
+        Apply sieving EM only on starting window. Futher previously
+        calculated mixture parameters are fed to adaptive EM algorithm 
+        and no new parameters a.k.a. 'candidates' are considered
+        """
+        # del self.parameters # clear results from previous launches
+        from tqdm.notebook import tqdm
+        from Algorithms import EM_KS
+        # Shuffling windows content
+        record_wind = self._window_segregation(data)
+        
+        # first_wind = record_wind[0]
+        # record_wind = record_wind[1:]
+        
+        # initial_guess = super().Kolmogorov_EM(
+        #     dataset=first_wind,
+        #     train_perc=train_perc,
+        #     random_seed=random_seed
+        # )
+        # self._update_dict(
+        #     self.__params,
+        #     initial_guess
+        # )
+
+        for ind, frame in enumerate(tqdm(record_wind)):
+            temporal_guess = EM_KS(
+                dataset=frame,
+                train_perc=train_perc,
+                class_probs_initial=self.parameters['probs'][ind],
+                mus_initial=self.parameters['mus'][ind],
+                sigmas_initial=self.parameters['sigmas'][ind],
+                relprev_pos=relprev_pos,
+                random_seed=random_seed
+            )
+
+            self._update_dict(
+                self.__params,
+                temporal_guess
+                )
+            # initial_guess = temporal_guess
+        return
     
     def reshape_params(
             self,

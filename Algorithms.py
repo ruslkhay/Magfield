@@ -210,7 +210,7 @@ def EM_adap(
     mus = mus_initial.copy()
     sigmas = sigmas_initial.copy()
 
-    prev_class_probs = zeros(n_classes) # intial valurs for condition
+    prev_class_probs = zeros(n_classes) # intial values for condition
     prev_mus, prev_sigmas = zeros(n_classes), zeros(n_classes) 
     i=0
     count = 0
@@ -300,7 +300,8 @@ def EM_sieved(
                 num_params, 
                 random_seed=rseed,
                 avr=INIT_MUS(dataset),
-                div=INIT_SIG(dataset))
+                div=INIT_SIG(dataset)
+                )
         )
         # Сохраняем параметры
         add_params(all_candid_params, predictions)
@@ -352,10 +353,11 @@ def EM_sieved(
 
     return prob, mu, sigma, loglike_history[0]
 
+from scipy.stats._stats_py import KstestResult
 def KS_test(
         data,
         **mix_param
-):
+) -> KstestResult:
     from scipy.stats import kstest
     import tensorflow_probability as tfp
 
@@ -373,3 +375,100 @@ def KS_test(
     cdf = lambda x: norm_mixture.cdf(x).numpy()
     kolmog_test = kstest(data, cdf)
     return kolmog_test
+
+def EM_KS(
+    dataset,
+    train_perc, # precendge of validationaly dataset size
+    class_probs_initial,
+    mus_initial,
+    sigmas_initial,
+    relprev_pos, # relative position of previous p-value count two compare with
+    random_seed
+):
+    '''
+    
+    '''
+    from numpy import isnan, abs, any
+    from numpy.random import shuffle, seed
+    num_comp = class_probs_initial.shape[0]
+
+    seed(random_seed)
+    # Shuffling th e dataset
+    data = dataset.copy()
+    shuffle(data)
+
+    # Separation of validating and traing data
+    train_size = int(train_perc * len(data))
+    data_train = data[:train_size]
+    data_valid = data[train_size:]
+
+    # Saving components to porcess
+    probs = class_probs_initial.copy()
+    mus = mus_initial.copy()
+    sigmas = sigmas_initial.copy()
+
+    # Initialize components for previous processed window
+    pvalue_prev = 0
+
+    # Counters for prints and rseed change
+    iter_counter=0
+    count = 0
+    while True:
+        # (I) EM step for train data
+        responsibilities = E_step(
+            data_train, 
+            tfp.distributions.Normal, 
+            probs,
+            mus, 
+            sigmas
+            )
+
+        # Если попалась неудачная генерация
+        if any(isnan(responsibilities)):
+            count += 1
+            probs, mus, sigmas = initialize_params(
+                num_comp,
+                count,
+                avr=INIT_MUS(dataset),
+                div=INIT_SIG(dataset)
+            )
+            print('Bad selection in EM_KS. Restarting the iteration ',
+                   iter_counter)
+            iter_counter = 0
+            continue
+
+        probs, mus, sigmas = M_step(
+            data_train, 
+            responsibilities
+        )
+        iter_counter+=1
+
+        # (II) Calculating p-value for data_valid
+        pvalue = KS_test(
+            data_valid,
+            probs=probs, 
+            mus=mus, 
+            sigmas=sigmas
+            )[1]
+        print('running \t', pvalue, pvalue_prev, sep=' | ')
+        # Stop-condition
+        if pvalue <= pvalue_prev:
+            print('break at', pvalue, pvalue_prev, sep=' | ')
+            break
+
+        # Saving previous p-value
+        if iter_counter % relprev_pos == 0:
+            pvalue_prev = pvalue
+
+    # Возвращаю значение ф-ии правд-ия для лучего результата
+    log_lh = log_likelihood(probs, mus, sigmas, dataset)
+    #Сортируем в правильном порядке
+    if(any(abs(probs-class_probs_initial) > 0.1 )):
+        
+        sorted_indices = sorted(range(len(class_probs_initial)),
+                                key=lambda k: class_probs_initial[k])
+        probs = np.array([probs[i] for i in sorted_indices])
+        mus = np.array([mus[i] for i in sorted_indices])
+        sigmas = np.array([sigmas[i] for i in sorted_indices])
+
+    return probs, mus, sigmas, log_lh
