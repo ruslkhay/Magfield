@@ -239,3 +239,158 @@ def construct_mixture_2Dplot(
                     height=400*len(params)
                     )
     return fig
+
+def harmonic_approximation(data, time, title=''):
+    import numpy as np
+    from scipy.optimize import leastsq
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
+    from scipy.stats import kstest, norm
+
+    def find_frequency(data, sampling_rate):
+        n = len(data)
+        t = np.arange(0, n) / sampling_rate
+        fft_result = np.fft.fft(data)
+        freqs = np.fft.fftfreq(n, d=1/sampling_rate)
+        spectrum = abs(fft_result)
+        
+        idx = np.argmax(spectrum[1:]) + 1  # Избегаем нулевую частоту
+        freq = freqs[idx]
+        
+        return abs(freq)
+
+    fig = make_subplots(
+        rows=4, cols=2,
+        specs=[[{"colspan": 2}, None],
+            [{}, {}],
+            [{}, {}],
+            [{"colspan": 2}, None]]
+    )
+    data_orig = data
+    t = np.array(range(len(data)))
+    params = []
+    harmonical_signal = np.zeros(len(data))
+
+    for ind, w in enumerate(range(4)):
+        guess_mean = np.mean(data)
+        # guess_std = 1
+        guess_phase = 0
+        guess_freq = find_frequency(data, len(data))*np.pi*2/len(data)
+        guess_amp = max(data) - min(data)
+
+        optimize_func = lambda x: x[0]*np.sin(x[1]*t+x[2]) + x[3] - data
+        params_sin = leastsq(
+            optimize_func, 
+            [guess_amp, guess_freq, guess_phase, guess_mean]
+            )[0]
+        
+        params.append(params_sin)
+        est_amp, est_freq, est_phase, est_mean = params_sin
+
+        data_fit = est_amp*np.sin(est_freq*t+est_phase) + est_mean
+        data = data - data_fit
+        r= 2+ind//2
+        c= 1 if ind%2==0 else 2 
+        fig.add_trace(
+            go.Scatter(
+                x=time, y=data,
+                mode="markers", marker=dict(color='#4169E1')),
+            row=r,col=c
+        )
+        fig.add_trace(
+            go.Line( 
+                x=time, y=data_fit, marker=dict(color='#FF7F50')),
+            row=r,
+            col=c
+        )
+        fig.add_annotation(xref="x domain", yref="y domain", x=0.5, y=1.2, 
+            showarrow=False,
+            font=dict(size=18),
+            text=f"{est_amp:.4f} * sin(2*{est_freq:.2f}*pi*t + {est_phase:.2f}) + {est_mean:.5f} (Harmonic №{ind})", 
+            row=r, col=c)
+        harmonical_signal += data_fit
+
+    fig.add_trace(
+        go.Histogram( 
+            x=data,
+            histnorm='probability density',
+            marker=dict(color='#3058B0')
+        ),
+        row=1,
+        col=1,
+    )
+    x = np.linspace(-0.004,
+                    0.004, 100)
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=norm.pdf(x, *norm.fit(data)),
+            marker=dict(color='#FF7F50')
+        ),
+        row=1,
+        col=1
+    )
+    cdf = lambda x: norm.cdf(
+            x,
+            loc=norm.fit(data)[0], 
+            scale=norm.fit(data)[1]
+            )
+    pval = kstest(
+        data, 
+        cdf=cdf
+        ).pvalue
+
+    fig.add_annotation(
+        xref="x domain",
+        yref="y domain",
+        x=0.5, 
+        y=1.4, 
+        showarrow=False,
+        font=dict(size=22),
+        text=f'<b>Residuals histogram<b>', 
+        row=1, 
+        col=1
+    )
+    fig.add_annotation(
+        xref="x domain",
+        yref="y domain",
+        x=0.5, 
+        y=1.2, 
+        showarrow=False,
+        font=dict(size=20),
+        text=f'Kolmogorov-Smirnov p-value = {pval:.3f}', 
+        row=1, 
+        col=1
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=data_orig,
+            marker=dict(color='#3058B0')
+        ),
+        row=4,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=time,
+            y=harmonical_signal,
+            marker=dict(color='#FF7F50')
+        ),
+        row=4,
+        col=1
+    )
+    fig.add_annotation( xref="x domain", yref="y domain", x=0.5, y=1.2, 
+        showarrow=False,
+        font=dict(size=22),
+        text="<b>Approximation<b>", 
+        row=4, col=1
+    )
+
+    fig.update_layout(
+        width=1500,
+        height=1200,
+        title=dict(font=dict(size=20), text=f'<b>{title}<b>')
+    )
+    return fig, data, params

@@ -267,7 +267,7 @@ class mixture:
         # Сортировка первого списка и получение индексов перестановки
         p, m, s, h = candidates
         sorted_indices = sorted(range(len(m)),
-                                 key=lambda k: m[k])
+                                 key=lambda k: s[k])
         p = array([p[i] for i in sorted_indices])
         m = array([m[i] for i in sorted_indices])
         s = array([s[i] for i in sorted_indices])
@@ -451,8 +451,8 @@ class DynamicMixture(mixture):
             self,
             data,
             EM_params = dict(
-                iter_initial=20,
-                num_candid=40,
+                iter_initial=12,
+                num_candid=20,
                 num_best_candid=8,
                 accur_final=0.001
             ),
@@ -484,12 +484,12 @@ class DynamicMixture(mixture):
             )
             self._update_dict(
                 self.__params,
-                (i, *temporal_guess)
+                temporal_guess
                 )
             initial_guess = temporal_guess
         return "finished"
     
-    def predic_light(
+    def predict_light(
         self,
         data,
         EM_params = dict(
@@ -542,7 +542,7 @@ class DynamicMixture(mixture):
             initial_guess = temporal_guess
         return "finished"
     
-    def predic_ks(
+    def predict_ks(
         self, 
         data,
         train_perc, # precendge of validationaly dataset size
@@ -622,7 +622,7 @@ class DynamicMixture(mixture):
         def procpar(pk, ak, bk):
             'for a specific window'
             a = np.sum(pk * ak)
-            b = np.sum(pk * (bk**2 * ak**2)) - a**2
+            b = np.sum(pk * (bk**2 + ak**2)) - a**2
             return a, b
         p = self.parameters['probs']
         a = self.parameters['mus']

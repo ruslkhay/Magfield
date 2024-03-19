@@ -383,7 +383,8 @@ def EM_KS(
     mus_initial,
     sigmas_initial,
     relprev_pos, # relative position of previous p-value count two compare with
-    random_seed
+    random_seed,
+    epsilon=4
 ):
     '''
     
@@ -452,7 +453,9 @@ def EM_KS(
             )[1]
         print('running \t', pvalue, pvalue_prev, sep=' | ')
         # Stop-condition
-        if pvalue <= pvalue_prev:
+        slow_speed_cond = (round(abs(pvalue - pvalue_prev), epsilon) == 0)
+        better_pval_cond = pvalue <= pvalue_prev
+        if better_pval_cond or slow_speed_cond:
             print('break at', pvalue, pvalue_prev, sep=' | ')
             break
 
