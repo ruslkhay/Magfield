@@ -1,0 +1,24 @@
+[project]
+name = "Magfield"
+version = "0.1.0"
+description = "data processing"
+authors = [
+    {name = "Ruslan Khaydarpashich", email = "h.ruslan2000@yandex.ru"},
+]
+dependencies = [
+    "tensorflow",
+    "numpy >= 2.0.0",
+    "pandas >= 2.2.2",
+    "plotly >= 5.22.0"
+]
+requires-python = ">=3.12"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[tool.pdm]
+distribution = true

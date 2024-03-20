@@ -1,0 +1,9 @@
+Data/
+Literature/
+.vscode/
+.venv/
+.ipynb_checkopoints
+__pycache__
+Figures/
+.ipynb_checkpoints
+.pdm-python
