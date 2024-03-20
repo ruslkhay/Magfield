@@ -261,10 +261,12 @@ def harmonic_approximation(data, time, title=''):
 
     fig = make_subplots(
         rows=4, cols=2,
-        specs=[[{"colspan": 2}, None],
+        specs=[
+            [{"colspan": 2}, None],
             [{}, {}],
             [{}, {}],
-            [{"colspan": 2}, None]]
+            [{"colspan": 2}, None]
+            ]
     )
     data_orig = data
     t = np.array(range(len(data)))
