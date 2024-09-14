@@ -1,17 +1,26 @@
 [project]
-name = "Magfield"
+name = "magfield"
 version = "0.1.0"
 description = "data processing"
 authors = [
     {name = "Ruslan Khaydarpashich", email = "h.ruslan2000@yandex.ru"},
 ]
 dependencies = [
-    "tensorflow",
-    "numpy >= 2.0.0",
-    "pandas >= 2.2.2",
-    "plotly >= 5.22.0"
+    "scipy >= 1.13.0, < 2",
+    "tensorflow >= 2.17.0, < 3",
+    "tensorflow_probability >= 0.24.0, < 1",
+    "tf_keras",
+    "ipywidgets",
+    "statsmodels >= 0.14.2, < 1",
+    "pandas >= 2.2.2, < 3",
+    "matplotlib",
+    "plotly >= 5.22.0, < 6",
+    "nbformat>=4.2.0",
+    "pre-commit",
+    "ipykernel",
+    "tqdm",
 ]
-requires-python = ">=3.12"
+requires-python = "<3.11,>=3.9"
 readme = "README.md"
 license = {text = "MIT"}
 
