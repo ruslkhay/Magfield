@@ -262,6 +262,7 @@ class DynamicMixture(Mixture):
     ):
         super().__init__(num_comps, distrib, random_seed)
 
+        self.num_comps = num_comps
         self.time_span = time_span  # values to mark time axis
         self.records = records  # signal to process
 
