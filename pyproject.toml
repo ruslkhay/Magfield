@@ -16,6 +16,7 @@ dependencies = [
     "pandas >= 2.2.2, < 3",
     "matplotlib",
     "plotly >= 5.22.0, < 6",
+    "kaleido == 0.2.1",
     "nbformat>=4.2.0",
     "pre-commit",
     "ipykernel",
