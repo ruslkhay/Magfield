@@ -5,6 +5,17 @@ from scipy.stats import kstest, norm
 from plotly.subplots import make_subplots
 
 
+def find_frequency(data, sampling_rate):
+    """"""
+    n = len(data)
+    fft_result = np.fft.fft(data)
+    freqs = np.fft.fftfreq(n, d=1 / sampling_rate)
+    spectrum = abs(fft_result)
+    idx = np.argmax(spectrum[1:]) + 1  # Set initial frequency
+    freq = freqs[idx]
+    return abs(freq)
+
+
 def harmonic_approximation(data, time, harmonics_num=4, smooth=0, title=""):
     if smooth:
 
@@ -14,17 +25,6 @@ def harmonic_approximation(data, time, harmonics_num=4, smooth=0, title=""):
             return y_smooth
 
         data = smoothing(data, smooth)
-
-    def find_frequency(data, sampling_rate):
-        n = len(data)
-        fft_result = np.fft.fft(data)
-        freqs = np.fft.fftfreq(n, d=1 / sampling_rate)
-        spectrum = abs(fft_result)
-
-        idx = np.argmax(spectrum[1:]) + 1  # Избегаем нулевую частоту
-        freq = freqs[idx]
-
-        return abs(freq)
 
     fig = make_subplots(rows=3, cols=1)
     # fig = make_subplots(rows=2, cols=1)

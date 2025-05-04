@@ -1,20 +1,25 @@
+import numpy as np
+
+
 def time_related_id(dataframe) -> None:
     """
-    Процедура добавляет к исходной таблице дополнительную колонку "ydhm_id"
-    (Year Date Hour Minute id) с временным форматом, поддерживающим
-    персонализированный вывод при построении графиков plotly.
+    Adds a new column 'ydhm_id' to the dataframe with a special format to
+    support personalized output when building plots with plotly.
 
-    Параметры
+    Parameters
     ----------
     dataframe : pandas.core.frame.DataFrame
-        Исходная таблица. Должна содержать колонки 'Year', 'Date',
-        'Hour', 'Minute', для обхединения их в одну - "ydhm_id".
+        The original dataframe. Should contain columns 'Year', 'Date',
+        'Hour', 'Minute' for merging them into one - 'ydhm_id'.
 
-    Возвращает: None
-    ----------
-    dataframe: pandas.core.frame.DataFrame
-        Исходная таблица с новым столбцом "ydhm_id" и без исходных столбцов
-        'Year', 'Date', 'Hour', 'Minute'
+    Returns
+    -------
+    None
+
+    Notes
+    -----
+    The new column 'ydhm_id' is added to the dataframe and the original columns
+    'Year', 'Date', 'Hour', 'Minute' are dropped.
     """
     from pandas import to_datetime
 
@@ -66,7 +71,18 @@ def sep_gaps(gaps_ind: list, space=3):
 def increm(arr):
     """
     Calculate increments of given array.
+
     First value is NaN by default
+
+    Parameters
+    ----------
+    arr : array_like
+        Input data.
+
+    Returns
+    -------
+    new_ar : array_like
+        Increments of given array.
     """
     new_ar = [None]
     for i in range(1, len(arr)):
@@ -77,7 +93,24 @@ def increm(arr):
 
 def fill_gaps(data, fill_by=2):
     """
-    Filling gaps with mean value of 2*fill_by neighboring counts
+    Fill gaps in given data by mean of nearest neighbors.
+
+    Parameters
+    ----------
+    data : array_like
+        Input data.
+    fill_by : int, optional
+        Number of neighbors to be taken from both sides for mean calculation.
+        The default is 2.
+
+    Returns
+    -------
+    filled_data : array_like
+        Data with filled gaps.
+
+    Notes
+    -----
+    Gaps are supposed to be NaNs.
     """
     from pandas import isna
     from numpy import isnan, mean
@@ -95,12 +128,20 @@ def fill_gaps(data, fill_by=2):
     return filled_data
 
 
-def smooth(data, wind_size=20):
-    from numpy.lib.stride_tricks import sliding_window_view
-    from numpy import mean
+def smooth(data, N=20):
+    """
+    Smooth given data by replacing each value with mean of N neighboring values
 
-    windows = sliding_window_view(data, wind_size)
-    smoothed = []
-    for wind in windows:
-        smoothed.append(mean(wind))
-    return smoothed
+    Parameters
+    ----------
+    data : array_like
+        Array of values to be smoothed
+    N : int, optional
+        Number of neighboring values to be used for mean calculation. Default is 20.
+
+    Returns
+    -------
+    smoothed : array_like
+        Smoothed array of values
+    """
+    return np.convolve(data, np.ones(N) / N, mode="valid")
