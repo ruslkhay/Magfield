@@ -159,8 +159,8 @@ class __EM:
 
     @property
     def aic(self):
-        k = len(self._num_comp) * 3 - 1
-        return -2 * self._llh + 2 * k
+        k = self._num_comp * 3 - 1 + 2  # 2 is a default value for AIC
+        return 2 * k - 2 * self._llh
 
 
 class EMscklearn(GaussianMixture, __EM):
@@ -212,7 +212,13 @@ class EMiter(__EM):
         super().__init__(num_comp, variances, means, probs, distrib, warm_start, rseed)
         self._num_iter = num_iter
 
-    def fit(self, data, pbar=True):
+    @property
+    def aic(self):
+        k = self._num_comp * 3 - 1 + 2  # 2 is a default value for AIC
+        k += 1
+        return 2 * k - 2 * self._llh
+
+    def fit(self, data, pbar=False):
         i, count = 0, 0
         if pbar:
             pbar = tqdm(range(self._num_iter), "Iterating __EM")
@@ -251,6 +257,12 @@ class EMadap(__EM):
         self._pprobs = np.zeros(num_comp)
         self._pmeans = np.zeros(num_comp)
         self._pvariances = np.zeros(num_comp)
+
+    @property
+    def aic(self):
+        k = self._num_comp * 3 - 1 + 2  # 2 is a default value for AIC
+        k += 1
+        return 2 * k - 2 * self._llh
 
     def stop_condition(self):
         """
@@ -322,6 +334,12 @@ class EMsiev(__EM):
         self._num_best = num_best
         self._epsilon = epsilon
         super().__init__(num_comp, variances, means, probs, distrib, warm_start, rseed)
+
+    @property
+    def aic(self):
+        k = self._num_comp * 3 - 1 + 2  # 2 is a default value for AIC
+        k += 4
+        return 2 * k - 2 * self._llh
 
     def fit(
         self,
@@ -399,6 +417,12 @@ class EMKS(__EM):
         rseed=42,
     ):
         super().__init__(num_comp, variances, means, probs, distrib, warm_start, rseed)
+
+    @property
+    def aic(self):
+        k = self._num_comp * 3 - 1 + 2  # 2 is a default value for AIC
+        k += 3
+        return 2 * k - 2 * self._llh
 
     def __ks_test(self, data) -> KstestResult:
         norm_mixture = tfp.distributions.MixtureSameFamily(
