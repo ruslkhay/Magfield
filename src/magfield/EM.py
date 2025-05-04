@@ -7,6 +7,7 @@ a gaussian distribution.
 import numpy as np
 import numpy.linalg as nlg
 from scipy.special import logsumexp
+from scipy.stats import kstest
 import tensorflow_probability as tfp
 from sklearn.mixture import GaussianMixture
 
@@ -14,7 +15,7 @@ import warnings
 from tqdm.notebook import tqdm
 
 
-class EM:
+class __EM:
     def __init__(
         self,
         num_comp=1,
@@ -156,8 +157,13 @@ class EM:
         self._means = vals["means"]
         self._variances = vals["variances"]
 
+    @property
+    def aic(self):
+        k = len(self._num_comp) * 3 - 1
+        return -2 * self._llh + 2 * k
 
-class EMscklearn(GaussianMixture, EM):
+
+class EMscklearn(GaussianMixture, __EM):
     pass
     # def fit(self, data):
     #     __start = gmm["window"]["step"]
@@ -189,8 +195,8 @@ class EMscklearn(GaussianMixture, EM):
     #             values[np.isnan(values)] = fillings.reshape(-1)
 
 
-class EMiter(EM):
-    """Iterative EM-algorithm."""
+class EMiter(__EM):
+    """Iterative __EM-algorithm."""
 
     def __init__(
         self,
@@ -209,7 +215,7 @@ class EMiter(EM):
     def fit(self, data, pbar=True):
         i, count = 0, 0
         if pbar:
-            pbar = tqdm(range(self._num_iter), "Iterating EM")
+            pbar = tqdm(range(self._num_iter), "Iterating __EM")
         else:
             pbar = range(self._num_iter)
         for i in pbar:
@@ -227,7 +233,7 @@ class EMiter(EM):
         self._llh = self._log_likelihood(data)
 
 
-class EMadap(EM):
+class EMadap(__EM):
     def __init__(
         self,
         num_comp=1,
@@ -248,7 +254,7 @@ class EMadap(EM):
 
     def stop_condition(self):
         """
-        Check the stop condition for the adaptive EM algorithm.
+        Check the stop condition for the adaptive __EM algorithm.
 
         This function evaluates whether the change in mixture parameters is
         within a s or self._probs is Nonepecified convergence accuracy (epsilon) for all components.
@@ -278,7 +284,7 @@ class EMadap(EM):
         self._llh = self._log_likelihood(data)
 
 
-class EMsiev(EM):
+class EMsiev(__EM):
     def __init__(
         self,
         num_comp=1,
@@ -294,7 +300,7 @@ class EMsiev(EM):
         rseed=42,
     ):
         """
-        Initialize parameters for EM-sieving algorithm.
+        Initialize parameters for __EM-sieving algorithm.
 
         Parameters
         ----------
@@ -303,12 +309,12 @@ class EMsiev(EM):
         num_init: int
             Number of candidates for finding best initial parameters sets.
         num_iter: int
-            Number of iterations for iterative EM-algorithm for calculating
+            Number of iterations for iterative __EM-algorithm for calculating
             parameters for each of the candidates.
         num_best: int
             Number of best candidates out of the initial candidates to process.
         epsilon: float
-            Convergence accuracy for adaptive EM-algorithm that applies on best
+            Convergence accuracy for adaptive __EM-algorithm that applies on best
             initial parameters.
         """
         self._num_init = num_init
@@ -333,7 +339,7 @@ class EMsiev(EM):
 
         # Sieve through initial candidates
         for candidate_id in pbar(
-            range(self._num_init), "Initial parameters. Iterative EM"
+            range(self._num_init), "Initial parameters. Iterative __EM"
         ):
             # Задает новое состояние случайного генератора при смене кандидата
             rseed = self._rseed + candidate_id
@@ -352,8 +358,8 @@ class EMsiev(EM):
         ids_best = np.argsort(-np.array(loglike))[: self._num_best]
         best_candid_params = ([], [], [], [])
 
-        # EM for best initial parameters
-        for i in pbar(ids_best, "Adaptive EM"):
+        # __EM for best initial parameters
+        for i in pbar(ids_best, "Adaptive __EM"):
             adaptive = EMadap(
                 self._num_comp,
                 self._epsilon,
@@ -379,5 +385,83 @@ class EMsiev(EM):
         self._llh = loglike_history[0]
 
 
-class EMKS(EM):
-    pass
+class EMKS(__EM):
+    from scipy.stats._stats_py import KstestResult
+
+    def __init__(
+        self,
+        num_comp=1,
+        variances=None,
+        means=None,
+        probs=None,
+        distrib="norm",
+        warm_start=False,
+        rseed=42,
+    ):
+        super().__init__(num_comp, variances, means, probs, distrib, warm_start, rseed)
+
+    def __ks_test(self, data) -> KstestResult:
+        norm_mixture = tfp.distributions.MixtureSameFamily(
+            mixture_distribution=tfp.distributions.Categorical(probs=self._probs),
+            components_distribution=tfp.distributions.Normal(
+                loc=self._means,
+                scale=self._variances,
+            ),
+        )
+        return kstest(data, lambda x: norm_mixture.cdf(x).numpy())
+
+    def fit(
+        self,
+        data,
+        train_perc,  # percentage of validational dataset size
+        relprev_pos=2,  # relative position of previous p-value count to compare with
+        conv_speed=0.0001,  # convergence speed between p-value changes
+    ):
+        """Kolmogorov-Smirnov EM-algorithm.
+
+        EM algorithm that prevent deviation fading using Kolmogorov-Smirnov test
+        for detecting p-value's decreasing (worsen). P-value is evaluated by
+        Kolmogorov-Smirnov statistic for fitting given data with mixture model
+        on current step.
+        """
+        np.random.seed(self._rseed)
+        np.random.shuffle(data)
+
+        # Separation of validating and training data
+        train_size = int(train_perc * len(data))
+        data_train = data[:train_size]
+        data_valid = data[train_size:]
+
+        # Saving components to process
+        # Initialize components for previous processed window
+        pvalue_prev = 0
+        # Counters for prints and rseed change
+        iter_counter = 0
+        count = 0
+        while True:
+            # (I) EM step for train data
+            response = self._e_step(data_train)
+            if np.any(np.isnan(response)):
+                count += 1
+                self._initialize_params(data, count)
+                warnings.warn(
+                    f"Bad selection in {self.__class__.__name__}. Restarting the iteration {iter_counter}"
+                )
+                iter_counter = 0
+                continue
+            self._m_step(data_train, response)
+            iter_counter += 1
+
+            # (II) Calculating p-value for data_valid
+            pvalue = self.__ks_test(data_valid)[1]
+            # Stop-condition
+            slow_speed_cond = np.abs(pvalue - pvalue_prev) < conv_speed
+            better_pval_cond = pvalue <= pvalue_prev
+            if better_pval_cond or slow_speed_cond:
+                break
+
+            # Saving previous p-value
+            if iter_counter % relprev_pos == 0:
+                pvalue_prev = pvalue
+
+        self._llh = self._log_likelihood(data)
