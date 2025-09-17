@@ -2,7 +2,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
 
-def long_plot(series, title, n, dates):
+def long_plot(series, title, n, dates, showlegend=True):
     """Represent long time series.
     Slice it down into `n` sections and put one under each other.
     :param series: 1D data to visualize.
@@ -38,6 +38,8 @@ def long_plot(series, title, n, dates):
         )
 
     # Update the layout of the figure
-    fig.update_layout(height=250 * n, width=1200, title_text=title)
+    fig.update_layout(
+        height=300 * n, width=1200, title_text=title, showlegend=showlegend
+    )
 
     return fig

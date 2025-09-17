@@ -158,6 +158,10 @@ class __EM:
         self._variances = vals["variances"]
 
     @property
+    def llh(self):
+        return self._llh
+
+    @property
     def aic(self):
         k = self._num_comp * 3 - 1 + 2  # 2 is a default value for AIC
         return 2 * k - 2 * self._llh
@@ -219,6 +223,9 @@ class EMiter(__EM):
         return 2 * k - 2 * self._llh
 
     def fit(self, data, pbar=False):
+        from time import time_ns
+
+        start = time_ns()
         i, count = 0, 0
         if pbar:
             pbar = tqdm(range(self._num_iter), "Iterating __EM")
@@ -237,6 +244,7 @@ class EMiter(__EM):
                 continue
             self._m_step(data, response)
         self._llh = self._log_likelihood(data)
+        self.time = time_ns() - start
 
 
 class EMadap(__EM):
@@ -278,6 +286,9 @@ class EMadap(__EM):
         return p and m and v
 
     def fit(self, data):
+        from time import time_ns
+
+        start = time_ns()
         count = 0
         while True:
             response = self._e_step(data)
@@ -294,6 +305,7 @@ class EMadap(__EM):
             self._pmeans = self._means
             self._pvariances = self._variances
         self._llh = self._log_likelihood(data)
+        self.time = time_ns() - start
 
 
 class EMsiev(__EM):
@@ -346,7 +358,10 @@ class EMsiev(__EM):
         data,
         prog_bar=False,
     ):
-        # (1) Генерирование первичных наборов параметров смесей
+        from time import time_ns
+
+        start = time_ns()
+        # Container for initial candidates
         all_candid_params = ([], [], [], [])
 
         def add_params(param_list, predic):
@@ -401,6 +416,7 @@ class EMsiev(__EM):
             "variances": sigmas[id_prime],
         }
         self._llh = loglike_history[0]
+        self.time = time_ns() - start
 
 
 class EMKS(__EM):
@@ -425,6 +441,16 @@ class EMKS(__EM):
         return 2 * k - 2 * self._llh
 
     def __ks_test(self, data) -> KstestResult:
+        """
+        Tests the null hypothesis that the data comes from a normal distribution.
+
+        Returns
+        -------
+        stat : float
+            KS test statistic.
+        pval : float
+            p-value.
+        """
         norm_mixture = tfp.distributions.MixtureSameFamily(
             mixture_distribution=tfp.distributions.Categorical(probs=self._probs),
             components_distribution=tfp.distributions.Normal(
@@ -448,6 +474,9 @@ class EMKS(__EM):
         Kolmogorov-Smirnov statistic for fitting given data with mixture model
         on current step.
         """
+        from time import time_ns
+
+        start = time_ns()
         np.random.seed(self._rseed)
         np.random.shuffle(data)
 
@@ -489,3 +518,4 @@ class EMKS(__EM):
                 pvalue_prev = pvalue
 
         self._llh = self._log_likelihood(data)
+        self.time = time_ns() - start
